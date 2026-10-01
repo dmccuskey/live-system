@@ -106,15 +106,31 @@ An application creates one instance of `LiveSystem`, adds its managers, and boot
 ```ts
 const system = new LiveSystem()
 
-system.addManager(new UserManager())
-system.addManager(new ServerManager())
+system.addManager(context => new UserManager(context, userSource))
+system.addManager(context => new ServerManager(context, serverSource))
 
 await system.boot()
 ```
 
 `boot()` takes the system through its whole lifecycle, from `CREATED` to `RUNNING`; [LifecycleRunner](#lifecyclerunner) shows how.
 
-Constructor arguments are left out here; [Managers](#managers) shows what a manager receives.
+`shutdown()` is the counterpart. It stops the running system and releases what it holds:
+
+```ts
+await system.shutdown()
+```
+
+`addManager()` takes a function that creates the manager. The system calls it with the one context that every manager shares, so the application does not pass shared parts around itself. `addManager()` then does the rest:
+
+```text
+system.addManager(factory)
+    │
+    ├── manager = factory(context)
+    ├── add the manager to the registry
+    └── register the manager's routes with the router
+```
+
+What differs from manager to manager, such as its record source, is passed by the function that creates it. [Managers](#managers) shows what a manager receives.
 
 The instance is the one place that holds the parts of the running system:
 
@@ -264,6 +280,17 @@ initialized: {
 
 An asynchronous lifecycle operation therefore naturally provides synchronization.
 
+Shutdown takes the same path in the other direction:
+
+```text
+system.shutdown()
+    │
+    ▼
+lifecycle.transition('stopped')  → system.stopManagers()
+```
+
+Managers are stopped in the reverse of the order they were added, so a manager that depends on one added earlier is stopped first. The system then closes its infrastructure connections.
+
 If initialization fails, the transition fails and the system does not silently advance to the next state.
 
 ## Managers
@@ -274,7 +301,7 @@ A manager may:
 
 - own a collection of records
 - create and destroy live objects
-- register commands
+- declare the commands it handles
 - subscribe to events
 - coordinate domain behavior
 - hold the record source for one kind of record (for example, one Feathers service)
@@ -304,10 +331,50 @@ abstract class BaseManager {
         protected readonly context: ManagerContext
     ) {}
 
+    routes(): Routes {
+        return {}
+    }
+
     async init(): Promise<void> {}
     async start(): Promise<void> {}
     async run(): Promise<void> {}
     async stop(): Promise<void> {}
+}
+```
+
+A manager receives as little as possible. The context holds only what every manager shares:
+
+```ts
+interface ManagerContext {
+    events: EventBus
+    store: Store
+}
+```
+
+The event bus is passed in rather than reached for globally, so a test can give a manager its own. The store is the application's local reactive state.
+
+The router is not in the context. A manager declares the commands it handles, and the system registers them when the manager is added:
+
+```ts
+class ServerManager extends DataManager<VirtualServerRecord> {
+    routes() {
+        return {
+            'server/:id/restart': this.restart
+        }
+    }
+}
+```
+
+A manager that works with records also receives the record source for its one kind of record:
+
+```ts
+abstract class DataManager<T> extends BaseManager {
+    constructor(
+        context: ManagerContext,
+        protected readonly source: RecordSource<T>
+    ) {
+        super(context)
+    }
 }
 ```
 
