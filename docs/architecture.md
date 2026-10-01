@@ -48,6 +48,8 @@ LiveSystem should not require a particular database, transport, UI framework, or
 
 For example, Feathers can be used as a record source implementation, while Vue can provide reactive presentation state, but neither should define the architecture.
 
+Decisions: [ADR 001](decisions/001-long-lived-managed-objects.md), [ADR 011](decisions/011-plain-typescript-vue-reactivity.md).
+
 ## Architectural Model
 
 At a high level:
@@ -158,6 +160,8 @@ Startup is split into three small responsibilities, described in the next two se
 
 > **LiveSystem owns the lifecycle. LifecycleRunner orchestrates it. The state machine enforces it.**
 
+Decisions: [ADR 004](decisions/004-lifecycle-runner-and-state-machine.md), [ADR 014](decisions/014-failure-and-shutdown.md).
+
 ## Lifecycle
 
 LiveSystem applications have an explicit lifecycle.
@@ -183,7 +187,7 @@ RUNNING
 STOPPED
 ```
 
-The exact implementation may use a small state machine, but the state machine is an implementation detail of the lifecycle system.
+The lifecycle is enforced by a small state machine, `micro-fsm`, but the state machine is an implementation detail of the lifecycle system.
 
 ### READY
 
@@ -224,6 +228,8 @@ At this point the system is expected to remain alive and respond to commands, ev
 The application shuts down its active behavior and releases resources.
 
 Managers should remove event listeners, stop timers, destroy live objects, and release other resources they own.
+
+Decision: [ADR 003](decisions/003-explicit-async-lifecycle.md).
 
 ## LifecycleRunner
 
@@ -292,6 +298,8 @@ lifecycle.transition('stopped')  → system.stopManagers()
 Managers are stopped in the reverse of the order they were added, so a manager that depends on one added earlier is stopped first. The system then closes its infrastructure connections.
 
 If initialization fails, the transition fails and the system does not silently advance to the next state.
+
+Decision: [ADR 004](decisions/004-lifecycle-runner-and-state-machine.md).
 
 ## Managers
 
@@ -391,6 +399,8 @@ abstract class DataManager<T> extends BaseManager {
 
 Managers should not assume that the application uses Feathers, Vue, SQLite, HTTP, or any other particular technology.
 
+Decision: [ADR 005](decisions/005-manager-capabilities.md).
+
 ## Live Objects
 
 A LiveSystem object represents something that exists continuously within the running system.
@@ -415,24 +425,24 @@ Examples include:
 - workflows
 - sessions
 
-A record might describe:
+A record holds the object's state, including the state that changes as the system runs:
 
 ```ts
 interface VirtualServerRecord {
     id: string
     cpuCapacity: number
     memoryCapacity: number
+    utilization: number
+    activeCommands: number
 }
 ```
 
-The corresponding live object might additionally contain:
+The corresponding live object reads and writes that record, and additionally holds what cannot be stored:
 
 ```text
-current utilization
-active work
 timers
 subscriptions
-pending operations
+operations in progress
 behavior
 ```
 
@@ -440,15 +450,17 @@ This distinction is important:
 
 ```text
 Record
-  = description of state
+  = state, as stored and displayed
 
 Live Object
-  = state + behavior + existence
+  = record + behavior + existence
 ```
 
 A manager creates and destroys the live object.
 
 The object manages what happens while it exists.
+
+Decision: [ADR 016](decisions/016-records-hold-live-state.md), on what a record holds.
 
 ## Object Ownership
 
@@ -492,6 +504,8 @@ This allows a simple mechanism to control basic parent-child ownership.
 
 Events remain useful for communication between independent parts of the system.
 
+Decision: [ADR 002](decisions/002-managers-own-existence.md).
+
 ## Data and Record Sources
 
 LiveSystem separates application behavior from persistence and transport.
@@ -501,6 +515,7 @@ A record source provides access to one kind of record. It is not the whole data 
 ```ts
 interface RecordSource<T> {
     find(): Promise<T[]>
+    get(id: string): Promise<T>
 
     create(data: T): Promise<T>
     update(id: string, data: T): Promise<T>
@@ -526,6 +541,8 @@ RecordSource
 ```
 
 This allows the application architecture to remain independent of its storage technology.
+
+Decisions: [ADR 006](decisions/006-record-source-boundary.md), [ADR 007](decisions/007-data-service-source-of-truth.md), [ADR 008](decisions/008-startup-sync.md).
 
 ## Reactive State
 
@@ -583,6 +600,8 @@ reactive projection
    └── web app: managers react, and the Vue UI updates
 ```
 
+Decisions: [ADR 011](decisions/011-plain-typescript-vue-reactivity.md), [ADR 007](decisions/007-data-service-source-of-truth.md).
+
 ## Commands
 
 Commands request actions.
@@ -624,6 +643,8 @@ The command router is therefore not necessarily a REST router.
 It is a **command dispatcher**.
 
 HTTP POST, WebSocket messages, internal method calls, or other transports may be adapters around the command system.
+
+Decision: [ADR 009](decisions/009-commands-events-crud.md).
 
 ## Events
 
@@ -683,6 +704,8 @@ An application whose record changes and reactive state already say everything ne
 
 The lifecycle is a lesser source: most parts learn about lifecycle changes through their own `init()`, `start()`, `run()`, and `stop()` methods rather than by subscribing.
 
+Decision: [ADR 009](decisions/009-commands-events-crud.md).
+
 ## Protocols
 
 Application-specific vocabulary does not belong in LiveSystem.
@@ -693,11 +716,18 @@ For example, a trading application may define:
 TradeSystem
 └── packages
     └── protocol
-        ├── commands
-        ├── events
-        ├── records
-        └── routes
+        ├── services.ts        service paths, one per kind of record
+        ├── events.ts          event bus events, if used
+        ├── orders/
+        │   ├── record.ts      the record's fields
+        │   ├── routes.ts      route patterns for its commands
+        │   ├── commands.ts    each command's data and its creator
+        │   └── constants.ts
+        └── positions/
+            └── ...
 ```
+
+The protocol is organized by domain: a domain's records, routes and commands sit together, as a manager owns one domain.
 
 LiveSystem provides the machinery for handling these concepts.
 
@@ -706,6 +736,8 @@ The application defines their meaning.
 > **LiveSystem provides the grammar. The application provides the language.**
 
 There should therefore be no generic `shared` or application-specific `protocol` package inside LiveSystem.
+
+Decision: [ADR 010](decisions/010-applications-own-protocol.md).
 
 ## Event and Subscription Cleanup
 
@@ -741,6 +773,8 @@ This prevents:
 
 Cleanup is therefore part of the lifecycle model rather than an afterthought.
 
+Decisions: [ADR 006](decisions/006-record-source-boundary.md), [ADR 015](decisions/015-timers-belong-to-owner.md).
+
 ## Demo Application
 
 The LiveSystem repository will contain a self-contained demonstration application, a **Virtual Infrastructure Simulator**: virtual users generate commands, virtual servers with finite capacity process them, and a manager adds or removes servers as load changes.
@@ -749,17 +783,15 @@ The examples in this document take their names from it (`VirtualServer`, `UserMa
 
 ## Package Structure
 
-The initial LiveSystem repository should be a Bun workspace.
-
-Conceptually:
+The LiveSystem repository is a Bun workspace:
 
 ```text
 live-system/
 │
 ├── packages/
-│   ├── core/
-│   ├── server-event-kit/
-│   └── web-event-kit/
+│   ├── live-system/           core, server and web entry points
+│   ├── micro-fsm/             the state machine behind the lifecycle
+│   └── feathers-connect/      the Feathers connection and record sources
 │
 ├── examples/
 │   └── virtual-infrastructure/
@@ -768,35 +800,19 @@ live-system/
 └── README.md
 ```
 
-The exact package boundaries may evolve as implementation proceeds.
+`live-system` is one package with three entry points:
 
-The demo should consume the actual LiveSystem packages rather than bypassing them with demo-specific implementations.
+| Entry point | Holds |
+|---|---|
+| `core` | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `RecordSource`, the optional event bus |
+| `server` | the router and the `CommandServer`, which turns an HTTP request into a command |
+| `web` | the `CommandClient` and the web startup |
 
-The demo therefore serves as a continuous integration and architectural proving ground.
+`micro-fsm` and `feathers-connect` start in this workspace and are built to move to repositories of their own.
 
-## Relationship to ServerEventKit and WebEventKit
+The demo consumes the actual LiveSystem packages rather than bypassing them with demo-specific implementations. It therefore serves as a continuous integration and architectural proving ground.
 
-The reusable system should remain separated into layers.
-
-Conceptually:
-
-```text
-                 LiveSystem
-                     │
-          ┌──────────┴──────────┐
-          │                     │
-   ServerEventKit          WebEventKit
-          │                     │
-          ▼                     ▼
-      Server-side           Browser-side
-      event/runtime         event/runtime
-```
-
-The exact responsibilities of these packages should be determined during implementation.
-
-The important architectural constraint is that application-specific concepts from the demo should not leak into the reusable packages.
-
-For example:
+Application-specific concepts from the demo do not leak into the reusable packages. For example:
 
 ```text
 VirtualUser
@@ -806,6 +822,35 @@ UserManager
 ```
 
 belong to the demo application, not LiveSystem itself.
+
+Decision: [ADR 012](decisions/012-bun-workspace-and-demo.md).
+
+## Processes, Server and Web
+
+A running system is at least three processes:
+
+```text
+              Data service
+          (Feathers with SQLite)
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+   Live server             Web app
+        │                     │
+   managers and            managers
+   live objects               │
+        │                     │
+   writes records         sends commands
+```
+
+The live server and every web app are clients of the data service. A system may have several web apps, all built the same way.
+
+The two sides are symmetric where possible. Both use the same `BaseManager` and `DataManager<T>`, connect to the data service, and mirror its records into a store. They differ in what they may do:
+
+- The server owns the live objects and is the only writer of records.
+- A web app is a display of what happens on the server. It has managers and no live objects, never writes records, and changes things only by sending commands.
+
+Decision: [ADR 013](decisions/013-server-web-symmetry.md).
 
 ## What LiveSystem Is Not
 
@@ -847,7 +892,7 @@ How does the system start and stop?
     → Lifecycle
 
 How does the system continue operating?
-    → Live object behavior + managers + events + scheduling
+    → Live object behavior + managers + events + timers
 ```
 
 If an application can be expressed naturally using these primitives, LiveSystem is doing its job.
@@ -861,3 +906,24 @@ The objective is not to build a giant framework containing every possible abstra
 The objective is to provide a small number of strong primitives that allow applications to express rich, long-lived behavior without becoming correspondingly complicated.
 
 > **A small number of simple primitives can support surprisingly rich, long-lived systems without requiring the application to become correspondingly complex.**
+
+## Decisions
+
+The reasons behind this design, and the options that were rejected, are recorded as architecture decision records in [decisions/](decisions/):
+
+- [ADR 001: Long-Lived Managed Objects, Not Actors](decisions/001-long-lived-managed-objects.md)
+- [ADR 002: Managers Own Existence, Objects Own Behavior](decisions/002-managers-own-existence.md)
+- [ADR 003: An Explicit Async Lifecycle With a Ready State](decisions/003-explicit-async-lifecycle.md)
+- [ADR 004: A Lifecycle Runner Over a Small State Machine of Our Own](decisions/004-lifecycle-runner-and-state-machine.md)
+- [ADR 005: Managers Inherit Capabilities, Not Technologies](decisions/005-manager-capabilities.md)
+- [ADR 006: The RecordSource Boundary](decisions/006-record-source-boundary.md)
+- [ADR 007: An Event-Based Data Service Is the Single Source of Truth](decisions/007-data-service-source-of-truth.md)
+- [ADR 008: Startup Sync: Subscribe, Snapshot, Reconcile](decisions/008-startup-sync.md)
+- [ADR 009: Commands, Events and CRUD Are Separate](decisions/009-commands-events-crud.md)
+- [ADR 010: Applications Own Their Protocol](decisions/010-applications-own-protocol.md)
+- [ADR 011: Plain TypeScript Classes; Vue Reactivity as a Library](decisions/011-plain-typescript-vue-reactivity.md)
+- [ADR 012: One Bun Workspace With a Demo That Uses the Real Packages](decisions/012-bun-workspace-and-demo.md)
+- [ADR 013: Server and Web Are Symmetric Where Possible](decisions/013-server-web-symmetry.md)
+- [ADR 014: Failure and Shutdown](decisions/014-failure-and-shutdown.md)
+- [ADR 015: No Scheduler: Timers Belong to Their Owner](decisions/015-timers-belong-to-owner.md)
+- [ADR 016: Records Hold the Live State](decisions/016-records-hold-live-state.md)
