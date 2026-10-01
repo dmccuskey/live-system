@@ -392,9 +392,9 @@ This allows the application architecture to remain independent of its storage te
 
 ## Reactive State
 
-Reactive state is a presentation and application-state concern rather than the fundamental architecture of LiveSystem.
+Reactive state is how data changes are communicated inside an application. It is not the fundamental architecture of LiveSystem, which remains ordinary TypeScript: classes, inheritance, and lifecycle.
 
-A Vue application might use:
+Vue 3's reactivity is used as a library, separately from Vue's components:
 
 ```ts
 reactive()
@@ -403,32 +403,35 @@ computed()
 watch()
 ```
 
-while LiveSystem itself remains ordinary TypeScript.
-
-This separation allows:
+These functions need no UI. They are used on both sides of an application, for different purposes:
 
 ```text
-TypeScript
-    │
-    ├── architecture
-    ├── lifecycle
-    ├── managers
-    ├── live objects
-    └── behavior
-         │
-         ▼
-      Vue 3
-         │
-         ├── reactive state
-         ├── components
-         └── UI
+                 Vue reactivity
+        reactive, ref, computed, watch
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+       Server                    Web app
+          │                         │
+   reactive state            reactive state
+          │                         │
+   managers and              managers react
+   live objects react               │
+          │                         │
+        no UI                Vue components
+                                    │
+                                   UI
 ```
+
+On the server, reactivity communicates data changes: a manager or a live object watches reactive state and acts when it changes. There are no components and nothing is rendered.
+
+In a web application, Vue is used in the standard way: the same reactive state also drives components, which render the UI.
 
 When Feathers is used, a useful model is:
 
 > **The data service is the source of truth. Reactive state is a materialized view of that data.**
 
-For example:
+This holds on both sides. For example:
 
 ```text
 Feathers
@@ -439,7 +442,8 @@ CRUD event
    ↓
 reactive projection
    ↓
-Vue UI
+   ├── server:  managers and live objects react
+   └── web app: managers react, and the Vue UI updates
 ```
 
 ## Commands
@@ -488,16 +492,6 @@ HTTP POST, WebSocket messages, internal method calls, or other transports may be
 
 Events report things that happened.
 
-Examples:
-
-```text
-user.created
-server.started
-server.stopped
-server.utilizationChanged
-pipeline.completed
-```
-
 Commands and events have different semantics:
 
 ```text
@@ -509,6 +503,48 @@ Event
 ```
 
 This distinction allows independent components to communicate without requiring direct knowledge of each other.
+
+### Event Sources
+
+There is no single channel that carries every event. Events come from several sources, each with its own way to subscribe:
+
+| Source | What it reports | Example |
+|---|---|---|
+| Record source | a record of one kind was created, updated, patched, or removed | a `VirtualServerRecord` was patched |
+| Reactive state | a value in the local reactive state changed | the number of servers changed |
+| Event bus | a domain event, published by one part of the application for others | `server.overloaded` |
+| Lifecycle | the system moved to another lifecycle state | the system reached `RUNNING` |
+
+Conceptually:
+
+```ts
+// Record source: a change to one kind of record
+source.onPatched(record => {
+    this.handlePatched(record)
+})
+
+// Reactive state: a change to a value
+watch(() => state.servers.length, count => {
+    this.handleServerCount(count)
+})
+
+// Event bus: a domain event
+events.on('server.overloaded', event => {
+    this.handleOverloaded(event)
+})
+```
+
+The event bus is a tool LiveSystem provides, not a requirement. It is for domain events between parts that should not know each other, such as:
+
+```text
+server.overloaded
+server.drained
+pipeline.completed
+```
+
+An application whose record changes and reactive state already say everything needs no event bus.
+
+The lifecycle is a lesser source: most parts learn about lifecycle changes through their own `init()`, `start()`, `run()`, and `stop()` methods rather than by subscribing.
 
 ## Protocols
 
@@ -536,6 +572,10 @@ There should therefore be no generic `shared` or application-specific `protocol`
 
 ## Event and Subscription Cleanup
 
+Whatever subscribes is responsible for unsubscribing.
+
+This applies to anything that subscribes, whether a manager, a live object, or another part of the application, and to every event source: record sources, reactive state, the event bus, and the lifecycle.
+
 Subscriptions should return cleanup functions.
 
 ```ts
@@ -550,7 +590,10 @@ const unsubscribe = source.onCreated(record => {
 })
 ```
 
-The manager retains the unsubscribe functions and invokes them during shutdown.
+The subscriber retains each unsubscribe function, or the id that stands in for one (a timer id, for example), and invokes it at the end of its own life or at shutdown, whichever comes first:
+
+- a manager, in `stop()`
+- a live object, in `destroy()`
 
 This prevents:
 
