@@ -101,7 +101,7 @@ Application
 
 ## The LiveSystem Object
 
-An application creates one instance of `LiveSystem`, adds its managers, and starts it:
+An application creates one instance of `LiveSystem`, adds its managers, and boots it:
 
 ```ts
 const system = new LiveSystem()
@@ -109,8 +109,10 @@ const system = new LiveSystem()
 system.addManager(new UserManager())
 system.addManager(new ServerManager())
 
-await system.start()
+await system.boot()
 ```
+
+`boot()` takes the system through its whole lifecycle, from `CREATED` to `RUNNING`; [LifecycleRunner](#lifecyclerunner) shows how.
 
 Constructor arguments are left out here; [Managers](#managers) shows what a manager receives.
 
@@ -221,7 +223,23 @@ LiveSystem
             └── StateMachine
 ```
 
-The runner advances the system through its lifecycle:
+`system.boot()` hands the startup to the runner. The runner's `run()` makes each transition in order, and each transition calls back into the system to do that state's work:
+
+```text
+system.boot()
+    │
+    ▼
+lifecycle.run()
+    │
+    ├── transition('ready')        → system.connect()
+    ├── transition('initialized')  → system.initManagers()
+    ├── transition('started')      → system.startManagers()
+    └── transition('running')      → system.runManagers()
+```
+
+`CREATED` is the state the system is in before `boot()` is called, while the managers are being created and added, so the runner makes no transition into it.
+
+Inside `run()`:
 
 ```ts
 await lifecycle.transition('ready')
