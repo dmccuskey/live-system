@@ -34,11 +34,14 @@ Technology stays at the edges: LiveSystem does not require a particular database
 
 ## The Demo
 
-The repository will include a self-contained demo, a Virtual Infrastructure Simulator. Virtual users generate commands on their own, virtual servers with finite capacity process them, and a manager adds or removes servers as load changes. It is built on the real LiveSystem packages, so it also proves the design. See [Demo Application](docs/architecture.md#demo-application).
+The repository will include a self-contained demo, a Virtual Infrastructure Simulator. Virtual users generate commands on their own, virtual servers with finite capacity process them, and a manager adds or removes servers as load changes. It is built on the real LiveSystem packages, so it also proves the design. See [Demo Architecture](docs/architecture-demo.md).
 
 ## Documentation
 
-- [Architecture](docs/architecture.md): the design, the planned package structure, and the demo application.
+- [Architecture](docs/architecture.md): the design and the planned package structure.
+- [Demo Architecture](docs/architecture-demo.md): the design of the demo application.
+
+Everything else is listed on the [documentation home](docs/README.md).
 
 ## License
 
