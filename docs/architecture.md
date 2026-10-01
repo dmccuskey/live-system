@@ -99,6 +99,47 @@ Application
         └── ...
 ```
 
+## The LiveSystem Object
+
+An application creates one instance of `LiveSystem`, adds its managers, and starts it:
+
+```ts
+const system = new LiveSystem()
+
+system.addManager(new UserManager())
+system.addManager(new ServerManager())
+
+await system.start()
+```
+
+Constructor arguments are left out here; [Managers](#managers) shows what a manager receives.
+
+The instance is the one place that holds the parts of the running system:
+
+```text
+system (a LiveSystem)
+│
+├── infrastructure connections
+├── Router
+├── Event Bus (when the application uses one)
+├── Manager Registry
+│    ├── UserManager
+│    ├── ServerManager
+│    └── ...
+│
+└── LifecycleRunner
+```
+
+`LiveSystem` is reusable: it knows nothing about the application's domain. What makes one application different from another is the managers added to it.
+
+The system owns infrastructure readiness. It connects to what the application depends on before any manager is initialized, so a manager can rely on one rule:
+
+> **When `init()` is called, the system's infrastructure is ready.**
+
+Startup is split into three small responsibilities, described in the next two sections:
+
+> **LiveSystem owns the lifecycle. LifecycleRunner orchestrates it. The state machine enforces it.**
+
 ## Lifecycle
 
 LiveSystem applications have an explicit lifecycle.
