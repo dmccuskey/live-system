@@ -365,6 +365,17 @@ class ServerManager extends DataManager<VirtualServerRecord> {
 }
 ```
 
+`routes()` returns plain functions, which carry no reference to the manager. The system adds that reference when it registers them: each route in the router records the manager that owns it, and the handler is called with that manager as `this`.
+
+```text
+route
+├── pattern    'server/:id/restart'
+├── handler    restart
+└── manager    the ServerManager that declared it
+```
+
+Because each route knows its manager, removing a manager also removes its routes.
+
 A manager that works with records also receives the record source for its one kind of record:
 
 ```ts
