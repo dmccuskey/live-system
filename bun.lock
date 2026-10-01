@@ -1,0 +1,82 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "live-system-workspace",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "examples/virtual-infrastructure/data-service": {
+      "name": "@virtual-infrastructure/data-service",
+      "version": "0.0.0",
+      "dependencies": {
+        "@virtual-infrastructure/protocol": "workspace:*",
+      },
+    },
+    "examples/virtual-infrastructure/live-server": {
+      "name": "@virtual-infrastructure/live-server",
+      "version": "0.0.0",
+      "dependencies": {
+        "@virtual-infrastructure/protocol": "workspace:*",
+        "feathers-connect": "workspace:*",
+        "live-system": "workspace:*",
+      },
+    },
+    "examples/virtual-infrastructure/protocol": {
+      "name": "@virtual-infrastructure/protocol",
+      "version": "0.0.0",
+    },
+    "examples/virtual-infrastructure/web": {
+      "name": "@virtual-infrastructure/web",
+      "version": "0.0.0",
+      "dependencies": {
+        "@virtual-infrastructure/protocol": "workspace:*",
+        "feathers-connect": "workspace:*",
+        "live-system": "workspace:*",
+      },
+    },
+    "packages/feathers-connect": {
+      "name": "feathers-connect",
+      "version": "0.0.0",
+    },
+    "packages/live-system": {
+      "name": "live-system",
+      "version": "0.0.0",
+      "dependencies": {
+        "micro-fsm": "workspace:*",
+      },
+    },
+    "packages/micro-fsm": {
+      "name": "micro-fsm",
+      "version": "0.0.0",
+    },
+  },
+  "packages": {
+    "@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
+
+    "@types/node": ["@types/node@26.6.4", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-ldVPDCzj7fsaGZrLB0NuHuTvJcsNasysBAqMolr/cgxrLd1xbqxIr3XJiPnHHJUCxj5sNF1vnRj9aWnrVh5Jcg=="],
+
+    "@virtual-infrastructure/data-service": ["@virtual-infrastructure/data-service@workspace:examples/virtual-infrastructure/data-service"],
+
+    "@virtual-infrastructure/live-server": ["@virtual-infrastructure/live-server@workspace:examples/virtual-infrastructure/live-server"],
+
+    "@virtual-infrastructure/protocol": ["@virtual-infrastructure/protocol@workspace:examples/virtual-infrastructure/protocol"],
+
+    "@virtual-infrastructure/web": ["@virtual-infrastructure/web@workspace:examples/virtual-infrastructure/web"],
+
+    "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
+
+    "feathers-connect": ["feathers-connect@workspace:packages/feathers-connect"],
+
+    "live-system": ["live-system@workspace:packages/live-system"],
+
+    "micro-fsm": ["micro-fsm@workspace:packages/micro-fsm"],
+
+    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+
+    "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
+  }
+}

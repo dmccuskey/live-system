@@ -1,0 +1,17 @@
+{
+    "name": "live-system-workspace",
+    "private": true,
+    "type": "module",
+    "workspaces": [
+        "packages/*",
+        "examples/virtual-infrastructure/*"
+    ],
+    "scripts": {
+        "test": "bun test",
+        "typecheck": "bun --bun tsc --noEmit"
+    },
+    "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0"
+    }
+}
