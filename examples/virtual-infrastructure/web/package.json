@@ -1,0 +1,11 @@
+{
+    "name": "@virtual-infrastructure/web",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "@virtual-infrastructure/protocol": "workspace:*",
+        "feathers-connect": "workspace:*",
+        "live-system": "workspace:*"
+    }
+}

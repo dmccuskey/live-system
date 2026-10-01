@@ -1,6 +1,60 @@
 # Development
 
-LiveSystem is at the design stage. The design is in [Architecture](architecture.md), and the reasons behind it are in the [decision records](decisions/). This page will gain the build, test and branch workflow when the workspace is scaffolded.
+LiveSystem is at the design stage. The design is in [Architecture](architecture.md), and the reasons behind it are in the [decision records](decisions/).
+
+## Current Baseline
+
+The repository is a [Bun](https://bun.sh) workspace with every package in place and nothing implemented. Each package is an empty shell with a test that proves it loads and resolves the packages it depends on.
+
+| Package | Folder | Depends on |
+|---|---|---|
+| `live-system` | `packages/live-system/` | `micro-fsm` |
+| `micro-fsm` | `packages/micro-fsm/` | nothing |
+| `feathers-connect` | `packages/feathers-connect/` | nothing from this workspace |
+| `@virtual-infrastructure/protocol` | `examples/virtual-infrastructure/protocol/` | nothing |
+| `@virtual-infrastructure/data-service` | `examples/virtual-infrastructure/data-service/` | the protocol |
+| `@virtual-infrastructure/live-server` | `examples/virtual-infrastructure/live-server/` | `live-system`, `feathers-connect`, the protocol |
+| `@virtual-infrastructure/web` | `examples/virtual-infrastructure/web/` | `live-system`, `feathers-connect`, the protocol |
+
+`live-system` has no root entry point. Import from `live-system/core`, `live-system/server` or `live-system/web`.
+
+`micro-fsm` and `feathers-connect` are built to move to repositories of their own, so neither may depend on `live-system`. Their tests check this.
+
+The demo's protocol is laid out by domain: `users/` and `servers/` each hold `record.ts`, `routes.ts`, `commands.ts` and `constants.ts`, beside `services.ts` and `events.ts`. Import a file by its path, for example `@virtual-infrastructure/protocol/users/record`.
+
+## Build and Test
+
+Install [Bun](https://bun.sh/docs/installation), then from the repository root:
+
+```sh
+bun install          # install dependencies and link the workspace packages
+bun test             # run every test in the workspace
+bun run typecheck    # check the types of every package
+```
+
+To run the tests of one package, give its folder:
+
+```sh
+bun test packages/micro-fsm
+```
+
+### No Build Step
+
+The packages export their TypeScript source: each `package.json` points its `exports` at files in `src/`, and nothing compiles them to JavaScript. Bun strips the types as it loads a file, so a change in one package is seen at once by the tests and by the demo, with no `dist/` folder to rebuild.
+
+What follows from this:
+
+- **`bun test` does not check types.** Bun removes them without checking them, so code with type errors can pass its tests. Run `bun run typecheck` as well.
+- **The packages run under Bun or through a bundler, not under plain Node.js.** Node.js does not strip types from files under `node_modules`. A web app built with a bundler such as Vite is unaffected.
+- **A package needs a build before it is published.** The build emits JavaScript and `.d.ts` files, and `exports` then points at those. This applies first to `micro-fsm` and `feathers-connect`, when they move to repositories of their own. It changes the package's `package.json`, not its source.
+
+## Testing
+
+Every change brings its tests ([ADR 012](decisions/012-bun-workspace-and-demo.md)). A test file sits beside the code it tests and is named `<file>.test.ts`.
+
+## Branch Workflow
+
+Work happens on a branch named for the change (`feat/`, `fix/`, `docs/`), created from an up-to-date `main`. A change that affects behavior updates the docs on the same branch.
 
 ## Possible Future Changes
 

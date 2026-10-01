@@ -1,6 +1,6 @@
 # LiveSystem Documentation
 
-New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the design stage, so these pages describe what will be built.
+New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the design stage: the workspace is scaffolded and nothing is implemented, so these pages describe what will be built.
 
 ## Internals
 
@@ -10,18 +10,32 @@ New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the d
 
 ## Contribute
 
-- [Development](development.md): possible future changes; the build and test workflow will be added with the code
+- [Development](development.md): the current baseline, how to build and test, the branch workflow, and possible future changes
 
 ## Project Structure
 
 ```text
 live-system/
 ├── docs/
-│   ├── README.md               # this page
-│   ├── architecture.md         # the design of LiveSystem
-│   ├── architecture-demo.md    # the design of the demo application
-│   ├── development.md          # possible future changes
-│   └── decisions/              # ADRs
+│   ├── README.md                 # this page
+│   ├── architecture.md           # the design of LiveSystem
+│   ├── architecture-demo.md      # the design of the demo application
+│   ├── development.md            # build, test, and possible future changes
+│   └── decisions/                # ADRs
+├── packages/
+│   ├── live-system/              # the framework: core, server and web entry points
+│   ├── micro-fsm/                # the state machine behind the lifecycle
+│   └── feathers-connect/         # the Feathers connection and record sources
+├── examples/
+│   └── virtual-infrastructure/   # the demo application
+│       ├── protocol/             # records, routes and commands, by domain
+│       ├── data-service/         # Feathers with SQLite
+│       ├── live-server/          # managers and live objects
+│       └── web/                  # the web app
+├── node_modules/                 # installed by `bun install` (gitignored)
+├── bun.lock
+├── package.json                  # the Bun workspace
+├── tsconfig.json                 # TypeScript configuration shared by the packages
 ├── LICENSE
 └── README.md
 ```

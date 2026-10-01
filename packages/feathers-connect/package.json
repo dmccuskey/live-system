@@ -1,0 +1,10 @@
+{
+    "name": "feathers-connect",
+    "version": "0.0.0",
+    "description": "A Feathers connection and record sources over its services",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "name": "micro-fsm",
+    "version": "0.0.0",
+    "description": "A small state machine with no dependencies",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    }
+}
