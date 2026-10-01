@@ -1,0 +1,54 @@
+# ADR 006: The RecordSource Boundary
+
+**Status:** Accepted
+
+## Context
+
+Managers work with records: they load them, change them, and react when they change. In an earlier prototype the managers held a wrapper around a Feathers service directly, so the data technology reached into every manager.
+
+That prototype's wrappers show the useful split: one object for the connection, through which every call goes, and one object per service for a single kind of record, offering the CRUD calls, a load-all call and the change events. The second is the boundary a manager needs.
+
+The wrapper registered listeners with add and remove method pairs, and fired its own "loaded" event when the connection became ready.
+
+## Decision
+
+A manager reaches records through a `RecordSource<T>`, which covers one kind of record. With Feathers, that is one service.
+
+```ts
+interface RecordSource<T> {
+    find(): Promise<T[]>
+    get(id: string): Promise<T>
+
+    create(data: T): Promise<T>
+    update(id: string, data: T): Promise<T>
+    patch(id: string, data: Partial<T>): Promise<T>
+    remove(id: string): Promise<T>
+
+    onCreated(listener: (record: T) => void): Unsubscribe
+    onUpdated(listener: (record: T) => void): Unsubscribe
+    onPatched(listener: (record: T) => void): Unsubscribe
+    onRemoved(listener: (record: T) => void): Unsubscribe
+}
+```
+
+- A record source is not the whole data store or the connection to it. Every record source of an application shares the one connection.
+- `find()` returns an array. An implementation whose backend returns pages or a single record normalizes the result.
+- `get(id)` rejects when the record does not exist. The startup sync depends on it ([ADR 008](008-startup-sync.md)).
+- Each subscription returns an `Unsubscribe` function. Whatever subscribes keeps it and calls it at the end of its own life: a manager in `stop()`, a live object in `destroy()`.
+- A record source does not load records on its own and has no "loaded" event. Loading is the `DataManager`'s job, during `init()`.
+- Feathers is one implementation, provided by the `feathers-connect` package. `RecordSource` is LiveSystem's requirement, and the implementation satisfies it.
+
+Rejected:
+
+- **Managers holding a Feathers service directly.** Every manager then depends on Feathers.
+- **A second abstraction over Feathers with no boundary of its own.** It hides Feathers without saying what a manager may rely on.
+- **Add and remove listener pairs.** The subscriber must keep both the listener and the right remove method; a returned function carries both.
+
+The name was `DataRepository` in the design discussion. It was changed because "repository" reads as a source code repository.
+
+## Consequences
+
+- A manager can be tested with a record source held in memory.
+- Other backends are possible by implementing the interface.
+- The interface is small, and anything a backend offers beyond it (queries, pagination) is out of reach through it until the interface grows.
+- The interface may still change where the existing wrapper code shows a better shape.
