@@ -13,7 +13,14 @@
       "name": "@virtual-infrastructure/data-service",
       "version": "0.0.0",
       "dependencies": {
+        "@feathersjs/errors": "^5.0.50",
+        "@feathersjs/feathers": "^5.0.50",
+        "@feathersjs/socketio": "^5.0.50",
+        "@feathersjs/transport-commons": "^5.0.50",
         "@virtual-infrastructure/protocol": "workspace:*",
+      },
+      "devDependencies": {
+        "feathers-connect": "workspace:*",
       },
     },
     "examples/virtual-infrastructure/live-server": {
