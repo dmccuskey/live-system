@@ -1,15 +1,24 @@
 // What the server and the web share: the lifecycle, LiveSystem, BaseManager,
-// LiveObject, the command types, DataManager<T>, RecordSource and the optional event bus.
+// LiveObject, the command types, RecordSource, the record store, DataManager<T>,
+// LiveObjectManager and the optional event bus.
 export { CommandError, fillRoute } from './command.ts'
 export type { Command, CommandErrorInfo, CommandResponse } from './command.ts'
+export { DataManager } from './data-manager.ts'
+export { debouncePatch } from './debounce.ts'
+export type { DebouncedPatch, DebouncePatchOptions } from './debounce.ts'
 export { EventBus } from './event-bus.ts'
 export type { EventBusOptions, EventListener, EventPayload } from './event-bus.ts'
 export { LifecycleRunner } from './lifecycle.ts'
 export type { LifecycleOwner, LifecycleState } from './lifecycle.ts'
+export { LiveObjectManager } from './live-object-manager.ts'
 export { LiveObject } from './live-object.ts'
 export type { LiveObjectOptions } from './live-object.ts'
 export { BaseManager } from './manager.ts'
 export type { RouteHandler, RouteParams, RouteRegistry, Routes } from './manager.ts'
+export { MemoryRecordSource } from './memory-record-source.ts'
+export type { HasId, NewRecord, RecordListener, RecordSource } from './record-source.ts'
+export { defineRecordStore } from './record-store.ts'
+export type { RecordStore } from './record-store.ts'
 export { LiveSystem } from './system.ts'
 export type { LiveSystemOptions } from './system.ts'
 export type { Unsubscribe } from './unsubscribe.ts'

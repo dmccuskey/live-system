@@ -10,6 +10,8 @@
         "./web": "./src/web/index.ts"
     },
     "dependencies": {
-        "micro-fsm": "workspace:*"
+        "micro-fsm": "workspace:*",
+        "pinia": "^4.0.3",
+        "vue": "^3.5.43"
     }
 }

@@ -21,6 +21,17 @@ export abstract class LiveObject {
         return this.#destroyed
     }
 
+    /**
+     * The object's own startup, in step with its manager's: each is called
+     * and awaited when the manager reaches that phase. An object created while
+     * the system is running gets all three, one after the other. An object
+     * overrides the ones it has work for.
+     */
+    init(): void | Promise<void> {}
+    start(): void | Promise<void> {}
+    /** From here on the object acts on its own: it starts its timers here, not earlier. */
+    run(): void | Promise<void> {}
+
     /** Ends the object's life: releases what it holds, then tells its owner. Calling it again does nothing. */
     destroy(): void {
         if (this.#destroyed) return

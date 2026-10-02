@@ -137,3 +137,14 @@ describe('ownership', () => {
         expect(other.objects.size).toBe(1)
     })
 })
+
+describe('init(), start() and run()', () => {
+    test('do nothing unless overridden', async () => {
+        const object = new Ticker(() => {})
+
+        expect(await object.init()).toBeUndefined()
+        expect(await object.start()).toBeUndefined()
+        expect(await object.run()).toBeUndefined()
+        expect(object.isDestroyed).toBe(false)
+    })
+})
