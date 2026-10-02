@@ -15,7 +15,7 @@ router.handle({
 
 ## Status
 
-LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, and the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes ([Development](docs/development.md)). Commands and data are not built, so there is nothing to run yet, and the example above shows the intended shape, not a published API. The design is in [docs/architecture.md](docs/architecture.md).
+LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes, and commands: the `Router` and the `CommandServer` ([Development](docs/development.md)). Data and the demo are not built, so there is nothing to run yet, and nothing is a published API. The design is in [docs/architecture.md](docs/architecture.md).
 
 ## Primitives
 

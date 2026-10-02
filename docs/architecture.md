@@ -108,6 +108,7 @@ An application creates one instance of `LiveSystem`, adds its managers, and boot
 ```ts
 const system = new LiveSystem<AppContext>({
     context: { events, store },
+    router,
     connect: () => connection.open(),
     disconnect: () => connection.close()
 })
@@ -118,7 +119,7 @@ system.addManager(context => new ServerManager(context, serverSource))
 await system.boot()
 ```
 
-The system is given three things, all of them the application's: the context that every manager shares, and optionally how to connect to the infrastructure it depends on and how to disconnect from it. LiveSystem itself opens no connection, so it assumes no technology.
+The system is given the application's own parts: the context that every manager shares, and optionally the router its managers' commands are registered with, how to connect to the infrastructure it depends on and how to disconnect from it. A server passes a router; a web app has none. LiveSystem itself opens no connection, so it assumes no technology.
 
 `boot()` takes the system through its whole lifecycle, from `CREATED` to `RUNNING`; [LifecycleRunner](#lifecyclerunner) shows how. If a step fails, what had started is stopped and disconnected, and `boot()` rejects with the error.
 
@@ -392,7 +393,17 @@ route
 └── manager    the ServerManager that declared it
 ```
 
-Because each route knows its manager, removing a manager also removes its routes.
+Because each route knows its manager, removing a manager also removes its routes. `shutdown()` removes the routes of every manager.
+
+A handler receives the route's parameters and the command's data. What it returns becomes the response's `result`:
+
+```ts
+restart(params: RouteParams, data: { force: boolean }) {
+    // params.id is '42' for the route 'server/42/restart'
+}
+```
+
+The router lives in `live-system/server`, and `core` knows it only as a `RouteRegistry`, an interface with `register()` and `removeManager()`.
 
 A manager that works with records also receives the record source for its one kind of record:
 
@@ -651,6 +662,47 @@ The command router is therefore not necessarily a REST router.
 It is a **command dispatcher**.
 
 HTTP POST, WebSocket messages, internal method calls, or other transports may be adapters around the command system.
+
+### The Router
+
+A `Router` is an ordinary object, usable with or without a `LiveSystem`:
+
+```ts
+const router = new Router()
+router.register('server/:id/restart', (params, data) => { ... })
+
+const response = await router.handle({ route: 'server/42/restart', data: { force: false } })
+```
+
+- A pattern is made of literal and `:param` segments, and matches a route with the same number of segments. Where several patterns match, the first segment in which they differ decides, and a literal beats a `:param`.
+- Registering a route that already exists throws. Two patterns that differ only in their parameter names are the same route.
+- `handle()` never rejects. It resolves with a `CommandResponse`:
+
+  ```ts
+  type CommandResponse<R = unknown> =
+      | { status: 'accepted'; result?: R }
+      | { status: 'failed'; error: { name: string; message: string; code: string } }
+  ```
+
+  An unknown route fails with the code `not_found`. A handler chooses its own code by throwing a `CommandError`; anything else it throws is reported with the code `internal`.
+
+`fillRoute('server/:id/restart', { id: '42' })` builds a route from its pattern, for an application's command creators. It throws on a missing parameter.
+
+### The CommandServer
+
+The `CommandServer` is the HTTP adapter. A command is posted to one path (`/command` unless another is given) with the command as the JSON body:
+
+```ts
+const commands = new CommandServer({ router })
+commands.listen({ port: 3040 })
+```
+
+```text
+POST /command
+{ "route": "server/42/restart", "data": { "force": false } }
+```
+
+The response body is always the `CommandResponse`. The HTTP status is 200 when the command was accepted, 400 for a body that is not a command, 404 for an unknown route, 405 for anything but POST, and 500 for any other failure. `handle(request)` works on the standard `Request` and `Response`, so the same server can be mounted in another HTTP server; `listen()` uses Bun's.
 
 Decision: [ADR 009](decisions/009-commands-events-crud.md).
 
