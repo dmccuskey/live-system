@@ -2,6 +2,8 @@
 export const SERVICES = {
     users: 'users',
     servers: 'servers',
+    settings: 'settings',
+    status: 'status',
 } as const
 
 /** The port the data service listens on, unless it is started with another. */

@@ -5,7 +5,7 @@ import { MemoryRecordSource } from 'live-system/core'
 import { collect, createContext, finishedEvents, TIME_SCALE, until } from './test-support.ts'
 import { VirtualServer } from './virtual-server.ts'
 
-const record: ServerRecord = { id: 's1', name: 'Server 1', capacity: 10, load: 0, activeCommands: 0 }
+const record: ServerRecord = { id: 's1', name: 'Server 1', capacity: 10, load: 0, activeCommands: 0, isDraining: false }
 
 /** A record source that keeps what it was asked to patch. */
 class RecordingSource extends MemoryRecordSource<ServerRecord> {
@@ -195,6 +195,83 @@ describe('the record', () => {
 
         await server.init()
 
+        expect(source.patches).toEqual([])
+    })
+})
+
+describe('draining', () => {
+    test('a draining server takes no new command', () => {
+        const { server } = create()
+
+        server.drain()
+
+        expect(server.isDraining).toBe(true)
+        expect(server.take(command('c1'))).toBe(false)
+        expect(server.load).toBe(0)
+    })
+
+    test('what it runs goes on to its end', async () => {
+        const { server, events } = create()
+
+        server.take(command('c1', 'search'))
+        server.drain()
+        await until(() => events.length === 1)
+
+        expect(events[0]).toMatchObject({ commandId: 'c1', outcome: 'completed' })
+        expect(server.activeCommands).toBe(0)
+    })
+
+    test('resume() ends it: the server takes commands again', () => {
+        const { server } = create()
+
+        server.drain()
+        server.resume()
+
+        expect(server.isDraining).toBe(false)
+        expect(server.take(command('c1'))).toBe(true)
+    })
+
+    test('the record says that the server drains, and that it no longer does', async () => {
+        const { server, source } = create()
+
+        server.drain()
+        await until(() => source.patches.length === 1)
+        expect(await source.get('s1')).toMatchObject({ isDraining: true })
+
+        server.resume()
+        await until(() => source.patches.length === 2)
+        expect(await source.get('s1')).toMatchObject({ isDraining: false })
+    })
+
+    test('draining twice is written once', async () => {
+        const { server, source } = create()
+
+        server.drain()
+        await until(() => source.patches.length === 1)
+        server.drain()
+        await Bun.sleep(100 * TIME_SCALE * 5)
+
+        expect(source.patches).toEqual([{ isDraining: true }])
+    })
+
+    test('init() clears the draining an earlier run left', async () => {
+        const { server, source } = create({ isDraining: true })
+
+        await server.init()
+
+        expect(server.isDraining).toBe(false)
+        expect(await source.get('s1')).toMatchObject({ isDraining: false })
+        expect(server.take(command('c1'))).toBe(true)
+    })
+
+    test('a destroyed server is not drained', async () => {
+        const { server, source } = create()
+
+        server.destroy()
+        server.drain()
+        await Bun.sleep(100 * TIME_SCALE * 5)
+
+        expect(server.isDraining).toBe(false)
         expect(source.patches).toEqual([])
     })
 })

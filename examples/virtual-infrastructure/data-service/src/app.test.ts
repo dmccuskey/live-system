@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
+import type { SettingsRecord } from '@virtual-infrastructure/protocol/settings/settings.record'
+import type { StatusRecord } from '@virtual-infrastructure/protocol/status/status.record'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { FeathersConnection } from 'feathers-connect'
 import { createDataService, type DataService } from './app.ts'
@@ -15,7 +17,7 @@ const alice: Omit<UserRecord, 'id'> = {
     commandMix: { search: 0.7, standard: 0.2, agentic: 0.1 },
     frustration: 0,
 }
-const server1: Omit<ServerRecord, 'id'> = { name: 'Server 1', capacity: 10, load: 0, activeCommands: 0 }
+const server1: Omit<ServerRecord, 'id'> = { name: 'Server 1', capacity: 10, load: 0, activeCommands: 0, isDraining: false }
 
 let services: DataService[] = []
 let connections: FeathersConnection[] = []
@@ -96,6 +98,21 @@ describe('records', () => {
         await connection.recordSource<UserRecord>(SERVICES.users).create({ ...alice, id: 'u1' })
 
         expect(await connection.recordSource<ServerRecord>(SERVICES.servers).find()).toEqual([])
+    })
+
+    test('there is a service for the settings and one for the status', async () => {
+        const { port } = await start()
+        const connection = await connect(port)
+        const settings = connection.recordSource<SettingsRecord>(SERVICES.settings)
+        const status = connection.recordSource<StatusRecord>(SERVICES.status)
+
+        const id = expect.stringMatching(/^[0-9a-f-]{36}$/)
+
+        await settings.create({ key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 })
+        await status.create({ key: 'servers', queueLength: 2, utilization: 0.4 })
+
+        expect(await settings.find()).toEqual([{ id, key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 }])
+        expect(await status.find()).toEqual([{ id, key: 'servers', queueLength: 2, utilization: 0.4 }])
     })
 
     test('patch, update and remove change the record', async () => {

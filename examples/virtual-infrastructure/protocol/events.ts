@@ -36,7 +36,21 @@ export interface UserRemovedEvent {
     userId: string
 }
 
-/** The events of the live server's event bus, by name. */
+/** The number of commands that wait in the `ServerManager`'s queue has changed. */
+export interface QueueChangedEvent {
+    length: number
+}
+
+/** The utilization of the servers as a whole has changed. */
+export interface UtilizationChangedEvent {
+    /** The load of all servers over their capacity, a fraction from 0 to 1. With no server, 0. */
+    utilization: number
+}
+
+/**
+ * The events of the live server's event bus, by name. What a manager reports
+ * of its own status is named after the manager: `servers.queueChanged`.
+ */
 export interface DemoEvents {
     commandRequested: CommandRequestedEvent
     commandQueued: CommandQueuedEvent
@@ -44,4 +58,6 @@ export interface DemoEvents {
     commandRefused: CommandRefusedEvent
     commandFinished: CommandFinishedEvent
     userRemoved: UserRemovedEvent
+    'servers.queueChanged': QueueChangedEvent
+    'servers.utilizationChanged': UtilizationChangedEvent
 }

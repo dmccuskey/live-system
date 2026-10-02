@@ -10,6 +10,7 @@
         "@virtual-infrastructure/protocol": "workspace:*",
         "feathers-connect": "workspace:*",
         "live-system": "workspace:*",
-        "pinia": "^4.0.3"
+        "pinia": "^4.0.3",
+        "vue": "^3.5.43"
     }
 }

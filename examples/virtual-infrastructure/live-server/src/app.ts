@@ -1,14 +1,15 @@
 // The live server's composition: the connection, the router, the managers and the command server.
 import type { DemoEvents } from '@virtual-infrastructure/protocol/events'
-import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
-import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { FeathersConnection } from 'feathers-connect'
-import { defineRecordStore, EventBus, LiveSystem } from 'live-system/core'
+import { EventBus, LiveSystem } from 'live-system/core'
 import { CommandServer, Router } from 'live-system/server'
 import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
 import { ServerManager } from './server-manager.ts'
+import { SettingsManager } from './settings-manager.ts'
+import { StatusManager } from './status-manager.ts'
+import { useServerStore, useSettingsStore, useStatusStore, useUserStore } from './stores.ts'
 import { UserManager } from './user-manager.ts'
 
 export interface LiveServerOptions {
@@ -48,6 +49,7 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
             const system = new LiveSystem<DemoContext>({
                 context: {
                     events,
+                    pinia,
                     random: options.random ?? Math.random,
                     timeScale: options.timeScale ?? 1,
                 },
@@ -56,21 +58,37 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
                 disconnect: () => connection.disconnect(),
             })
 
-            // Servers first, so they are there when the users begin to send commands
+            system.addManager(
+                context =>
+                    new StatusManager(
+                        context,
+                        connection.recordSource(SERVICES.status),
+                        useStatusStore(pinia),
+                    ),
+            )
+            // In any order: each loads its store in init(), begins to watch in start(), and acts in run()
             system.addManager(
                 context =>
                     new ServerManager(
                         context,
-                        connection.recordSource<ServerRecord>(SERVICES.servers),
-                        defineRecordStore<ServerRecord>(SERVICES.servers)(pinia),
+                        connection.recordSource(SERVICES.servers),
+                        useServerStore(pinia),
+                    ),
+            )
+            system.addManager(
+                context =>
+                    new SettingsManager(
+                        context,
+                        connection.recordSource(SERVICES.settings),
+                        useSettingsStore(pinia),
                     ),
             )
             system.addManager(
                 context =>
                     new UserManager(
                         context,
-                        connection.recordSource<UserRecord>(SERVICES.users),
-                        defineRecordStore<UserRecord>(SERVICES.users)(pinia),
+                        connection.recordSource(SERVICES.users),
+                        useUserStore(pinia),
                     ),
             )
 

@@ -3,6 +3,7 @@ import type { CommandFinishedEvent, DemoEvents } from '@virtual-infrastructure/p
 import { EventBus, LiveSystem } from 'live-system/core'
 import type { BaseManager, Command, CommandResponse } from 'live-system/core'
 import { Router } from 'live-system/server'
+import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
 
 /** Durations in the tests are a hundredth of the real ones: a search command runs for 20 ms. */
@@ -11,6 +12,7 @@ export const TIME_SCALE = 0.01
 export function createContext(overrides: Partial<DemoContext> = {}): DemoContext {
     return {
         events: new EventBus<DemoEvents>(),
+        pinia: createPinia(),
         random: () => 0.5,
         timeScale: TIME_SCALE,
         ...overrides,
