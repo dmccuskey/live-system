@@ -8,9 +8,9 @@ import { feathers, type Application, type HookContext } from '@feathersjs/feathe
 import socketio from '@feathersjs/socketio'
 // For the types of `channel` and `publish`
 import '@feathersjs/transport-commons'
-import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/record'
+import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
-import type { UserRecord } from '@virtual-infrastructure/protocol/users/record'
+import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { SqliteService } from './sqlite-service.ts'
 
 export interface DataServiceOptions {

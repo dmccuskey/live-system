@@ -1,2 +1,8 @@
 // The live server: the managers and the live objects. The only writer of records.
-export {}
+export { createLiveServer, type LiveServer, type LiveServerOptions } from './app.ts'
+export type { DemoContext } from './context.ts'
+export { createProfile, pickCommandType, type UserProfile } from './profile.ts'
+export { ServerManager } from './server-manager.ts'
+export { UserManager } from './user-manager.ts'
+export { VirtualServer, type ServerCommand } from './virtual-server.ts'
+export { VirtualUser } from './virtual-user.ts'
