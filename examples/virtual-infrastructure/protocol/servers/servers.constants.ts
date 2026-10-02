@@ -26,3 +26,22 @@ export const MAX_RUNNING_PER_USER = 3
 
 /** How many of one user's commands may wait in the queue. A further one is refused. */
 export const MAX_QUEUED_PER_USER = 1
+
+/** The fewest and the most servers automatic scaling keeps. */
+export const MIN_SERVERS = 1
+export const MAX_SERVERS = 8
+
+/** How often the utilization is sampled in automatic mode, in milliseconds. */
+export const SCALING_SAMPLE_INTERVAL = 1_000
+
+/** How long the utilization must stay above the maximum before a server is added, in milliseconds. */
+export const SCALE_UP_WINDOW = 5_000
+
+/** How long the utilization must stay below the lower mark before a server is removed, in milliseconds. */
+export const SCALE_DOWN_WINDOW = 15_000
+
+/** How far the lower mark is below the maximum utilization. The gap keeps scaling from going back and forth. */
+export const SCALE_DOWN_GAP = 0.4
+
+/** The lower mark is never below this, however low the maximum utilization is set. */
+export const MIN_SCALE_DOWN_UTILIZATION = 0.1

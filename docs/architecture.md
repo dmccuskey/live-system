@@ -362,6 +362,16 @@ abstract class BaseManager<C = unknown> {
 }
 ```
 
+Each phase has its work, and keeping to it is what makes the order of the managers irrelevant:
+
+| Phase | What a manager and its live objects do |
+|---|---|
+| `init()` | read their own records from the data store and rebuild their objects from them |
+| `start()` | begin to watch what is within the system: the event bus, the stores |
+| `run()` | begin to act, and to communicate with the outside world, for example a stock market API |
+
+Every manager has finished a phase before any begins the next. So a manager that announces something in `run()` is heard by every manager that began to listen in `start()`, whichever was added first.
+
 A manager receives as little as possible. The context holds only what every manager shares. Its type is the application's own, since the events are the application's choice:
 
 ```ts

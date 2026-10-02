@@ -10,6 +10,8 @@ import socketio from '@feathersjs/socketio'
 import '@feathersjs/transport-commons'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
+import type { SettingsRecord } from '@virtual-infrastructure/protocol/settings/settings.record'
+import type { StatusRecord } from '@virtual-infrastructure/protocol/status/status.record'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { SqliteService } from './sqlite-service.ts'
 
@@ -30,6 +32,8 @@ export interface DataService {
 interface ServiceTypes {
     users: SqliteService<UserRecord>
     servers: SqliteService<ServerRecord>
+    settings: SqliteService<SettingsRecord>
+    status: SqliteService<StatusRecord>
 }
 
 /** A record without an ID gets one here, so IDs are strings whatever creates the record. */
@@ -53,7 +57,10 @@ export function createDataService(options: DataServiceOptions): DataService {
             app.use(SERVICES.users, new SqliteService<UserRecord>(db, SERVICES.users))
             app.use(SERVICES.servers, new SqliteService<ServerRecord>(db, SERVICES.servers))
 
-            for (const path of [SERVICES.users, SERVICES.servers]) {
+            app.use(SERVICES.settings, new SqliteService<SettingsRecord>(db, SERVICES.settings))
+            app.use(SERVICES.status, new SqliteService<StatusRecord>(db, SERVICES.status))
+
+            for (const path of Object.values(SERVICES)) {
                 app.service(path).hooks({ before: { create: [assignId] } })
             }
 

@@ -35,6 +35,7 @@ export class VirtualServer extends LiveObject {
     #context: DemoContext
     #active = new Map<string, ActiveCommand>()
     #load = 0
+    #isDraining = false
     #write: DebouncedPatch<ServerRecord>
 
     constructor(
@@ -70,23 +71,38 @@ export class VirtualServer extends LiveObject {
         return this.#active.size
     }
 
-    /** No command outlives the live server, so what the record says of an earlier run is cleared. */
+    /** Whether the server is on its way out: it takes no new command. */
+    get isDraining(): boolean {
+        return this.#isDraining
+    }
+
+    /** From here on the server takes no new command. What it runs goes on to its end. */
+    drain(): void {
+        this.#setDraining(true)
+    }
+
+    /** Ends the draining: the server takes commands again. */
+    resume(): void {
+        this.#setDraining(false)
+    }
+
+    /** No command outlives the live server, and no draining, so what the record says of an earlier run is cleared. */
     override async init(): Promise<void> {
-        if (this.#record.load !== this.#load || this.#record.activeCommands !== this.#active.size) {
-            this.#writeLoad()
-            await this.#write.flush()
-        }
+        if (this.#record.load !== this.#load || this.#record.activeCommands !== this.#active.size) this.#writeLoad()
+        if (this.#record.isDraining) this.#write.patch({ isDraining: false })
+
+        await this.#write.flush()
     }
 
     /**
-     * Runs the command, if there is room for it. Returns whether it was taken.
+     * Runs the command, if there is room for it and the server is not draining. Returns whether it was taken.
      * A command taken is announced with a `commandStarted` event, and finished
      * after its type's duration with a `commandFinished` event.
      */
     take(command: ServerCommand): boolean {
         const { cost, duration } = COMMAND_TYPES[command.type]
 
-        if (this.isDestroyed || cost > this.free || this.#active.has(command.id)) return false
+        if (this.isDestroyed || this.#isDraining || cost > this.free || this.#active.has(command.id)) return false
 
         const timer = setTimeout(() => this.#finish(command.id), duration * this.#context.timeScale)
 
@@ -122,6 +138,13 @@ export class VirtualServer extends LiveObject {
         this.#load -= active.cost
         this.#writeLoad()
         this.#emitFinished(active.command, 'completed')
+    }
+
+    #setDraining(isDraining: boolean): void {
+        if (this.isDestroyed || this.#isDraining === isDraining) return
+
+        this.#isDraining = isDraining
+        this.#write.patch({ isDraining })
     }
 
     #writeLoad(): void {
