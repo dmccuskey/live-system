@@ -40,7 +40,7 @@ describe('ServersPanel', () => {
         expect(wrapper.get('h2').text()).toBe('Servers (2 of 8)')
     })
 
-    test('in manual mode the number is shown without the limit, which is automatic scaling\'s', () => {
+    test("in manual mode the number is shown without the limit, which is automatic scaling's", () => {
         const { pinia, global } = createTestApp()
 
         setSettings(pinia, 'manual')

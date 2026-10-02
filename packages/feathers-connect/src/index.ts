@@ -8,5 +8,5 @@ export {
     type HasId,
     type NewRecord,
     type RecordListener,
-    type Unsubscribe
+    type Unsubscribe,
 } from './record-source.ts'

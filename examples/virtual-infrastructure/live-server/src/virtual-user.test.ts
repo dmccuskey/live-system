@@ -54,7 +54,11 @@ const listening = async (overrides: Partial<UserRecord> = {}) => {
     return created
 }
 
-const command = (commandId: string, type: CommandRequestedEvent['type'] = 'search', userId = 'u1'): CommandRequestedEvent => ({
+const command = (
+    commandId: string,
+    type: CommandRequestedEvent['type'] = 'search',
+    userId = 'u1',
+): CommandRequestedEvent => ({
     commandId,
     userId,
     type,
@@ -126,7 +130,9 @@ describe('generating commands', () => {
     test('a refused command does not stop the next', async () => {
         const { user, sent, context } = create()
 
-        context.events.on('commandRequested', event => context.events.emit('commandRefused', { ...event, reason: 'queue_full' }))
+        context.events.on('commandRequested', event =>
+            context.events.emit('commandRefused', { ...event, reason: 'queue_full' }),
+        )
         user.run()
         await until(() => sent.length >= 3)
     })

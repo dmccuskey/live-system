@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test'
-import { createAddServerCommand, createRemoveServerCommand } from '@virtual-infrastructure/protocol/servers/servers.commands'
+import {
+    createAddServerCommand,
+    createRemoveServerCommand,
+} from '@virtual-infrastructure/protocol/servers/servers.commands'
 import {
     COMMAND_TYPES,
     MAX_QUEUED_PER_USER,
@@ -28,7 +31,11 @@ import { SETTINGS_ROUTES } from '@virtual-infrastructure/protocol/settings/setti
 import { INITIAL_STATUS, STATUS_KEYS } from '@virtual-infrastructure/protocol/status/status.constants'
 import type { StatusRecord } from '@virtual-infrastructure/protocol/status/status.record'
 import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
-import { MAX_COMMANDS_PER_MINUTE, MIN_COMMANDS_PER_MINUTE, USER_NAMES } from '@virtual-infrastructure/protocol/users/users.constants'
+import {
+    MAX_COMMANDS_PER_MINUTE,
+    MIN_COMMANDS_PER_MINUTE,
+    USER_NAMES,
+} from '@virtual-infrastructure/protocol/users/users.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { USER_ROUTES } from '@virtual-infrastructure/protocol/users/users.routes'
 
@@ -48,16 +55,32 @@ test('records are identified by id', () => {
         commandMix: { search: 0.7, standard: 0.2, agentic: 0.1 },
         frustration: 0,
     }
-    const server: ServerRecord = { id: 's1', name: 'Server 1', capacity: 10, load: 4, activeCommands: 1, isDraining: false }
+    const server: ServerRecord = {
+        id: 's1',
+        name: 'Server 1',
+        capacity: 10,
+        load: 4,
+        activeCommands: 1,
+        isDraining: false,
+    }
     expect([user.id, server.id]).toEqual(['u1', 's1'])
 })
 
-test.each(['events', 'users/users.routes', 'users/users.commands', 'users/users.constants', 'servers/servers.routes', 'servers/servers.commands', 'servers/servers.constants', 'settings/settings.routes', 'settings/settings.commands', 'settings/settings.constants', 'status/status.constants'])(
-    '%s loads',
-    async (path) => {
-        expect(await import(`@virtual-infrastructure/protocol/${path}`)).toBeDefined()
-    },
-)
+test.each([
+    'events',
+    'users/users.routes',
+    'users/users.commands',
+    'users/users.constants',
+    'servers/servers.routes',
+    'servers/servers.commands',
+    'servers/servers.constants',
+    'settings/settings.routes',
+    'settings/settings.commands',
+    'settings/settings.constants',
+    'status/status.constants',
+])('%s loads', async path => {
+    expect(await import(`@virtual-infrastructure/protocol/${path}`)).toBeDefined()
+})
 
 test('the live server has a default port', () => {
     expect(LIVE_SERVER_PORT).toBe(3031)
@@ -106,7 +129,11 @@ test('a user may have three commands running and one waiting', () => {
 
 test('a settings record is keyed by the manager it is for', () => {
     expect(SETTINGS_KEYS).toEqual({ servers: 'servers' })
-    expect(DEFAULT_SETTINGS.servers).toEqual({ key: SETTINGS_KEYS.servers, scalingMode: 'automatic', maxUtilization: 0.75 })
+    expect(DEFAULT_SETTINGS.servers).toEqual({
+        key: SETTINGS_KEYS.servers,
+        scalingMode: 'automatic',
+        maxUtilization: 0.75,
+    })
     expect(DEFAULT_SETTINGS.servers).not.toHaveProperty('id')
 })
 

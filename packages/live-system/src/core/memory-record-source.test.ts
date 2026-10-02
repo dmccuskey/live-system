@@ -155,7 +155,7 @@ describe('change events', () => {
             ['created', first],
             ['updated', { id: 'a', name: 'replaced', count: 5 }],
             ['patched', { id: 'a', name: 'replaced', count: 6 }],
-            ['removed', { id: 'a', name: 'replaced', count: 6 }]
+            ['removed', { id: 'a', name: 'replaced', count: 6 }],
         ])
     })
 

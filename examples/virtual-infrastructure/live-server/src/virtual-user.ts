@@ -1,5 +1,9 @@
 // VirtualUser: a user's ongoing behavior. It generates commands on its own and asks for them to be run.
-import type { CommandFinishedEvent, CommandRefusedEvent, CommandStartedEvent } from '@virtual-infrastructure/protocol/events'
+import type {
+    CommandFinishedEvent,
+    CommandRefusedEvent,
+    CommandStartedEvent,
+} from '@virtual-infrastructure/protocol/events'
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { debouncePatch, LiveObject } from 'live-system/core'
@@ -65,15 +69,29 @@ export class VirtualUser extends LiveObject {
     /** Begins to listen for what becomes of its commands. */
     override start(): void {
         const { events } = this.#context
-        const own = <E extends { userId: string }>(listener: (event: E) => void) => (event: E) => {
-            if (event.userId === this.id) listener(event)
-        }
+        const own =
+            <E extends { userId: string }>(listener: (event: E) => void) =>
+            (event: E) => {
+                if (event.userId === this.id) listener(event)
+            }
 
         this.#subscriptions.push(
-            events.on('commandQueued', own(event => this.#queuedAt.set(event.commandId, performance.now()))),
-            events.on('commandStarted', own(event => this.#started(event))),
-            events.on('commandRefused', own(event => this.#refused(event))),
-            events.on('commandFinished', own(event => this.#finished(event))),
+            events.on(
+                'commandQueued',
+                own(event => this.#queuedAt.set(event.commandId, performance.now())),
+            ),
+            events.on(
+                'commandStarted',
+                own(event => this.#started(event)),
+            ),
+            events.on(
+                'commandRefused',
+                own(event => this.#refused(event)),
+            ),
+            events.on(
+                'commandFinished',
+                own(event => this.#finished(event)),
+            ),
         )
     }
 

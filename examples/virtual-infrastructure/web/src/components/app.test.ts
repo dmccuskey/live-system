@@ -154,7 +154,7 @@ describe('SystemStatus', () => {
         wrapper.unmount()
     })
 
-    test('follows the utilization at once: the average is the record\'s', async () => {
+    test("follows the utilization at once: the average is the record's", async () => {
         const { pinia, global } = createTestApp()
         const store = useStatusStore(pinia)
 

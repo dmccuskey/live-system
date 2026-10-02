@@ -19,12 +19,12 @@ An earlier prototype kept a shared folder and copied it between two repositories
 - Route patterns are defined once in the protocol, as constants. The server's managers use them in `routes()`, and the web uses them to build commands, so the two cannot disagree on a route.
 - The protocol also holds the application's command creators: small functions that build a command from typed arguments, filling the route's parameters.
 
-  ```ts
-  const restartServer = (id: string, data: RestartOptions): Command<RestartOptions> => ({
-      route: fillRoute(Routes.restartServer, { id }),   // 'server/:id/restart'
-      data
-  })
-  ```
+    ```ts
+    const restartServer = (id: string, data: RestartOptions): Command<RestartOptions> => ({
+        route: fillRoute(Routes.restartServer, { id }), // 'server/:id/restart'
+        data,
+    })
+    ```
 
 - LiveSystem has no `shared` or `protocol` package, and contains no application vocabulary.
 - Where an application's server and web apps share a workspace, the protocol package is an ordinary workspace dependency.

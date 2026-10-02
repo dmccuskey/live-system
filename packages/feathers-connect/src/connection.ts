@@ -7,7 +7,7 @@ import {
     type FeathersRecordSourceOptions,
     type FeathersServiceLike,
     type HasId,
-    type Unsubscribe
+    type Unsubscribe,
 } from './record-source.ts'
 
 export interface FeathersConnectionOptions {

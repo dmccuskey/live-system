@@ -59,37 +59,18 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
             })
 
             system.addManager(
-                context =>
-                    new StatusManager(
-                        context,
-                        connection.recordSource(SERVICES.status),
-                        useStatusStore(pinia),
-                    ),
+                context => new StatusManager(context, connection.recordSource(SERVICES.status), useStatusStore(pinia)),
             )
             // In any order: each loads its store in init(), begins to watch in start(), and acts in run()
             system.addManager(
-                context =>
-                    new ServerManager(
-                        context,
-                        connection.recordSource(SERVICES.servers),
-                        useServerStore(pinia),
-                    ),
+                context => new ServerManager(context, connection.recordSource(SERVICES.servers), useServerStore(pinia)),
             )
             system.addManager(
                 context =>
-                    new SettingsManager(
-                        context,
-                        connection.recordSource(SERVICES.settings),
-                        useSettingsStore(pinia),
-                    ),
+                    new SettingsManager(context, connection.recordSource(SERVICES.settings), useSettingsStore(pinia)),
             )
             system.addManager(
-                context =>
-                    new UserManager(
-                        context,
-                        connection.recordSource(SERVICES.users),
-                        useUserStore(pinia),
-                    ),
+                context => new UserManager(context, connection.recordSource(SERVICES.users), useUserStore(pinia)),
             )
 
             const commandServer = new CommandServer({ router })

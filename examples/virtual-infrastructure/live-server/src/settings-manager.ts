@@ -75,7 +75,10 @@ export class SettingsManager extends DataManager<SettingsRecord, DemoContext> {
 
         if (scalingMode !== undefined) {
             if (scalingMode !== 'automatic' && scalingMode !== 'manual') {
-                throw new CommandError('bad_request', `The scaling mode is 'automatic' or 'manual', not '${scalingMode}'`)
+                throw new CommandError(
+                    'bad_request',
+                    `The scaling mode is 'automatic' or 'manual', not '${scalingMode}'`,
+                )
             }
 
             changes.scalingMode = scalingMode

@@ -27,9 +27,9 @@ const startDataService = async () => {
             create: [
                 async (context: HookContext) => {
                     context.data.id ??= crypto.randomUUID()
-                }
-            ]
-        }
+                },
+            ],
+        },
     })
     app.on('connection', (peer: any) => (app as any).channel('everyone').join(peer))
     ;(app as any).publish(() => (app as any).channel('everyone'))

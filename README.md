@@ -9,7 +9,7 @@ A command asks the running system to do something. It is a route plus data, and 
 ```ts
 router.handle({
     route: 'server/42/restart',
-    data: { force: false }
+    data: { force: false },
 })
 ```
 

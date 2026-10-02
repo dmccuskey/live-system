@@ -10,7 +10,7 @@ describe('Router, matching', () => {
 
         expect(await router.handle({ route: 'server/list', data: undefined })).toEqual({
             status: 'accepted',
-            result: 'listed'
+            result: 'listed',
         })
     })
 
@@ -47,11 +47,11 @@ describe('Router, matching', () => {
         for (const router of [first, second]) {
             expect(await router.handle({ route: 'server/list', data: undefined })).toEqual({
                 status: 'accepted',
-                result: 'literal'
+                result: 'literal',
             })
             expect(await router.handle({ route: 'server/42', data: undefined })).toEqual({
                 status: 'accepted',
-                result: 'param'
+                result: 'param',
             })
         }
     })
@@ -63,7 +63,7 @@ describe('Router, matching', () => {
 
         expect(await router.handle({ route: 'server/42/restart', data: undefined })).toEqual({
             status: 'accepted',
-            result: 'early literal'
+            result: 'early literal',
         })
     })
 })
@@ -116,7 +116,7 @@ describe('Router, responses', () => {
 
         expect(await router.handle({ route: 'job/create', data: undefined })).toEqual({
             status: 'accepted',
-            result: { id: 'job-1' }
+            result: { id: 'job-1' },
         })
     })
 
@@ -125,7 +125,7 @@ describe('Router, responses', () => {
 
         expect(await router.handle({ route: 'server/42/restart', data: undefined })).toEqual({
             status: 'failed',
-            error: { name: 'CommandError', message: "No route matches 'server/42/restart'", code: 'not_found' }
+            error: { name: 'CommandError', message: "No route matches 'server/42/restart'", code: 'not_found' },
         })
     })
 
@@ -144,7 +144,7 @@ describe('Router, responses', () => {
 
         expect(await router.handle({ route: 'server/42/restart', data: undefined })).toEqual({
             status: 'failed',
-            error: { name: 'ServerBusy', message: 'The server is busy', code: 'busy' }
+            error: { name: 'ServerBusy', message: 'The server is busy', code: 'busy' },
         })
     })
 
@@ -159,11 +159,11 @@ describe('Router, responses', () => {
 
         expect(await router.handle({ route: 'throws', data: undefined })).toEqual({
             status: 'failed',
-            error: { name: 'TypeError', message: 'not a server', code: 'internal' }
+            error: { name: 'TypeError', message: 'not a server', code: 'internal' },
         })
         expect(await router.handle({ route: 'rejects', data: undefined })).toEqual({
             status: 'failed',
-            error: { name: 'Error', message: 'too late', code: 'internal' }
+            error: { name: 'Error', message: 'too late', code: 'internal' },
         })
     })
 })
@@ -175,7 +175,7 @@ class Servers extends BaseManager {
     constructor(
         context: unknown,
         private readonly name = 'servers',
-        private readonly extra: string[] = []
+        private readonly extra: string[] = [],
     ) {
         super(context)
     }
@@ -184,7 +184,7 @@ class Servers extends BaseManager {
         return {
             [`${this.name}/:id/restart`]: this.restart,
             [`${this.name}/count`]: this.count,
-            ...Object.fromEntries(this.extra.map(pattern => [pattern, this.count]))
+            ...Object.fromEntries(this.extra.map(pattern => [pattern, this.count])),
         }
     }
 
@@ -199,7 +199,7 @@ class Servers extends BaseManager {
 }
 
 describe('Router, with managers', () => {
-    test('removeManager removes that manager\'s routes only', async () => {
+    test("removeManager removes that manager's routes only", async () => {
         const router = new Router()
         const one = {}
         const two = {}
@@ -224,7 +224,7 @@ describe('Router, with managers', () => {
         expect(servers.restarted).toEqual(['42!'])
         expect(await router.handle({ route: 'servers/count', data: undefined })).toEqual({
             status: 'accepted',
-            result: 1
+            result: 1,
         })
     })
 
@@ -247,7 +247,7 @@ describe('Router, with managers', () => {
         system.addManager(context => new Servers(context, 'servers'))
 
         expect(() => system.addManager(context => new Servers(context, 'spares', ['servers/count']))).toThrow(
-            'already registered'
+            'already registered',
         )
         expect(router.patterns).toEqual(['servers/:id/restart', 'servers/count'])
 
@@ -263,7 +263,7 @@ describe('Router, with managers', () => {
         expect(calls).toEqual([])
     })
 
-    test('shutdown removes the managers\' routes', async () => {
+    test("shutdown removes the managers' routes", async () => {
         const router = new Router()
         router.register('free', () => 'still here')
         const system = new LiveSystem<unknown>({ context: {}, router })
@@ -276,7 +276,7 @@ describe('Router, with managers', () => {
         expect(router.patterns).toEqual(['free'])
         expect(await router.handle({ route: 'servers/count', data: undefined })).toMatchObject({
             status: 'failed',
-            error: { code: 'not_found' }
+            error: { code: 'not_found' },
         })
     })
 

@@ -29,7 +29,7 @@ describe('destroy()', () => {
     test('releases what the object holds, then tells the owner', () => {
         const calls: string[] = []
         const object = new Ticker(() => calls.push('unsubscribe'), {
-            onDestroyed: () => calls.push('onDestroyed')
+            onDestroyed: () => calls.push('onDestroyed'),
         })
 
         object.destroy()
@@ -72,7 +72,7 @@ describe('destroy()', () => {
             () => {
                 throw new Error('no such listener')
             },
-            { onDestroyed: () => (told += 1) }
+            { onDestroyed: () => (told += 1) },
         )
 
         expect(() => object.destroy()).toThrow('no such listener')
@@ -106,7 +106,7 @@ describe('ownership', () => {
         }
     }
 
-    test('an object that ends its own life leaves its owner\'s registry', () => {
+    test("an object that ends its own life leaves its owner's registry", () => {
         const owner = new Owner()
         const first = owner.create('a')
         owner.create('b')

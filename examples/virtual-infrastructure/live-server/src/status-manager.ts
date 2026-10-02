@@ -39,7 +39,7 @@ export class StatusManager extends DataManager<StatusRecord, DemoContext> {
         const { events } = this.context
 
         this.#subscriptions.push(
-            events.on('servers.queueChanged', event => 
+            events.on('servers.queueChanged', event =>
                 this.#report(STATUS_KEYS.servers, { queueLength: event.length, waitingForRoom: event.waitingForRoom }),
             ),
             events.on('servers.utilizationChanged', event =>
@@ -64,7 +64,8 @@ export class StatusManager extends DataManager<StatusRecord, DemoContext> {
      */
     async #begin(initial: Omit<StatusRecord, 'id'>): Promise<void> {
         const record = Object.values(this.records.records).find(candidate => candidate.key === initial.key)
-        const isStale = record && Object.entries(initial).some(([field, value]) => record[field as keyof StatusRecord] !== value)
+        const isStale =
+            record && Object.entries(initial).some(([field, value]) => record[field as keyof StatusRecord] !== value)
         const { id } = record ?? (await this.source.create({ ...initial }))
 
         if (isStale) await this.source.patch(id, initial)
@@ -73,7 +74,8 @@ export class StatusManager extends DataManager<StatusRecord, DemoContext> {
             initial.key,
             debouncePatch<StatusRecord>(data => this.source.patch(id, data), WRITE_DELAY * this.context.timeScale, {
                 onError: error => {
-                    if (!this.#isStopped) console.error(`StatusManager: a write of the status '${initial.key}' failed`, error)
+                    if (!this.#isStopped)
+                        console.error(`StatusManager: a write of the status '${initial.key}' failed`, error)
                 },
             }),
         )

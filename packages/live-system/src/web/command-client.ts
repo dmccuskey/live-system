@@ -41,7 +41,7 @@ export class CommandClient {
             answer = await this.#fetch(this.url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ route: command.route, data: command.data })
+                body: JSON.stringify({ route: command.route, data: command.data }),
             })
         } catch (cause) {
             const error = new CommandError('unreachable', `The command server at '${this.url}' cannot be reached`)
@@ -64,7 +64,7 @@ export class CommandClient {
 
         throw new CommandError(
             'bad_response',
-            `The answer from '${this.url}' (HTTP ${answer.status}) is not a command response`
+            `The answer from '${this.url}' (HTTP ${answer.status}) is not a command response`,
         )
     }
 }

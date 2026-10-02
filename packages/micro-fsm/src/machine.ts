@@ -38,7 +38,7 @@ export class TransitionError<S extends string = string> extends Error {
         super(
             reason === 'in-transition'
                 ? `Cannot transition to '${to}': another transition is in progress`
-                : `Cannot transition from '${from}' to '${to}'`
+                : `Cannot transition from '${from}' to '${to}'`,
         )
         this.name = 'TransitionError'
         this.from = from

@@ -11,8 +11,8 @@ function lifecycle(states: MachineConfig<State>['states'] = {}): StateMachine<St
             ready: { from: 'created' },
             running: { from: 'ready' },
             stopped: { from: '*' },
-            ...states
-        }
+            ...states,
+        },
     })
 }
 
@@ -58,7 +58,7 @@ describe('allowed transitions', () => {
 
     test('from may list several states', async () => {
         const states: MachineConfig<State>['states'] = {
-            stopped: { from: ['ready', 'running'] }
+            stopped: { from: ['ready', 'running'] },
         }
 
         const fromReady = lifecycle(states)
@@ -93,8 +93,8 @@ describe('allowed transitions', () => {
                 from: ['created', 'ready'],
                 enter: () => {
                     entered++
-                }
-            }
+                },
+            },
         })
 
         await machine.transition('ready')
@@ -124,7 +124,7 @@ describe('refused transitions', () => {
             from: 'created',
             to: 'running',
             reason: 'not-allowed',
-            message: "Cannot transition from 'created' to 'running'"
+            message: "Cannot transition from 'created' to 'running'",
         })
     })
 
@@ -160,7 +160,7 @@ describe('refused transitions', () => {
         const calls: string[] = []
         const machine = lifecycle({
             created: { leave: () => void calls.push('leave created') },
-            running: { from: 'ready', enter: () => void calls.push('enter running') }
+            running: { from: 'ready', enter: () => void calls.push('enter running') },
         })
 
         await machine.transition('running').catch(() => {})
@@ -190,8 +190,8 @@ describe('can()', () => {
                 from: 'created',
                 enter: () => {
                     entered++
-                }
-            }
+                },
+            },
         })
 
         machine.can('ready')
@@ -211,8 +211,8 @@ describe('enter', () => {
                 enter: async () => {
                     stateInsideEnter = machine.state
                     await gate.promise
-                }
-            }
+                },
+            },
         })
 
         let settled = false
@@ -234,7 +234,7 @@ describe('enter', () => {
     test('is told where the transition comes from and goes to', async () => {
         const seen: unknown[] = []
         const machine = lifecycle({
-            stopped: { from: '*', enter: (transition) => void seen.push(transition) }
+            stopped: { from: '*', enter: transition => void seen.push(transition) },
         })
 
         await machine.transition('ready')
@@ -250,8 +250,8 @@ describe('enter', () => {
                 from: 'created',
                 enter: async () => {
                     throw failure
-                }
-            }
+                },
+            },
         })
 
         await expect(machine.transition('ready')).rejects.toBe(failure)
@@ -266,8 +266,8 @@ describe('enter', () => {
                 from: 'created',
                 enter: () => {
                     throw failure
-                }
-            }
+                },
+            },
         })
 
         const error = await machine.transition('ready').catch((e: unknown) => e)
@@ -283,8 +283,8 @@ describe('enter', () => {
                 from: 'created',
                 enter: () => {
                     if (++attempts === 1) throw new Error('not yet')
-                }
-            }
+                },
+            },
         })
 
         await machine.transition('ready').catch(() => {})
@@ -304,8 +304,8 @@ describe('leave', () => {
             ready: {
                 from: 'created',
                 enter: () => void calls.push(`enter ready in ${machine.state}`),
-                leave: () => void calls.push('leave ready')
-            }
+                leave: () => void calls.push('leave ready'),
+            },
         })
 
         await machine.transition('ready')
@@ -322,8 +322,8 @@ describe('leave', () => {
                 from: 'created',
                 enter: () => {
                     entered = true
-                }
-            }
+                },
+            },
         })
 
         const done = machine.transition('ready')
@@ -342,7 +342,7 @@ describe('leave', () => {
     test('is told where the transition comes from and goes to', async () => {
         const seen: unknown[] = []
         const machine = lifecycle({
-            created: { leave: (transition) => void seen.push(transition) }
+            created: { leave: transition => void seen.push(transition) },
         })
 
         await machine.transition('stopped')
@@ -357,14 +357,14 @@ describe('leave', () => {
             created: {
                 leave: async () => {
                     throw failure
-                }
+                },
             },
             ready: {
                 from: 'created',
                 enter: () => {
                     entered = true
-                }
-            }
+                },
+            },
         })
 
         const error = await machine.transition('ready').catch((e: unknown) => e)
@@ -379,7 +379,7 @@ describe('one transition at a time', () => {
     test('a transition started while another is in progress is refused', async () => {
         const gate = deferred()
         const machine = lifecycle({
-            ready: { from: 'created', enter: () => gate.promise }
+            ready: { from: 'created', enter: () => gate.promise },
         })
 
         const first = machine.transition('ready')
@@ -404,8 +404,8 @@ describe('one transition at a time', () => {
                 from: 'created',
                 enter: async () => {
                     inner = await machine.transition('stopped').catch((e: unknown) => e)
-                }
-            }
+                },
+            },
         })
 
         await machine.transition('ready')
@@ -420,8 +420,8 @@ describe('one transition at a time', () => {
                 from: 'created',
                 enter: () => {
                     throw new Error('failed')
-                }
-            }
+                },
+            },
         })
 
         await machine.transition('ready').catch(() => {})
@@ -435,7 +435,7 @@ describe('independence', () => {
     test('two machines from the same configuration do not share state', async () => {
         const config: MachineConfig<State> = {
             initial: 'created',
-            states: { ready: { from: 'created' } }
+            states: { ready: { from: 'created' } },
         }
         const one = new StateMachine(config)
         const two = new StateMachine(config)

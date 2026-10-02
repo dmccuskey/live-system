@@ -30,7 +30,7 @@ class Thing extends LiveObject {
         private readonly source: RecordSource<Item>,
         private readonly log: Log,
         private readonly behavior: Behavior,
-        options: LiveObjectOptions
+        options: LiveObjectOptions,
     ) {
         super(options)
         this.log.push(`${id}:created`)
@@ -351,15 +351,7 @@ describe('an object that fails to start', () => {
 
         expect([...manager.objects.keys()]).toEqual(['b'])
         expect(manager.failures).toEqual([['a', new Error('a failed in init')]])
-        expect(manager.log).toEqual([
-            'a:created',
-            'b:created',
-            'a:init',
-            'b:init',
-            'a:release',
-            'b:start',
-            'b:run'
-        ])
+        expect(manager.log).toEqual(['a:created', 'b:created', 'a:init', 'b:init', 'a:release', 'b:start', 'b:run'])
     })
 
     test('in a later phase: it gets no further phase', async () => {
@@ -513,7 +505,7 @@ describe('in a LiveSystem', () => {
             'a:start',
             'b:start',
             'a:run',
-            'b:run'
+            'b:run',
         ])
 
         manager.log.length = 0

@@ -14,7 +14,7 @@ class Recorder extends BaseManager<Context> {
         context: Context,
         private readonly name: string,
         private readonly calls: string[],
-        private readonly work: Partial<Record<Hook, () => void | Promise<void>>> = {}
+        private readonly work: Partial<Record<Hook, () => void | Promise<void>>> = {},
     ) {
         super(context)
     }
@@ -51,7 +51,7 @@ function recordingSystem(options: Partial<LiveSystemOptions<Context>> = {}) {
         context,
         connect: () => void calls.push('connect'),
         disconnect: () => void calls.push('disconnect'),
-        ...options
+        ...options,
     })
     const add = (name: string, work?: Partial<Record<Hook, () => void | Promise<void>>>) =>
         system.addManager(shared => new Recorder(shared, name, calls, work))
@@ -229,7 +229,7 @@ describe('a failed boot()', () => {
         const calls: string[] = []
         const { system, add } = recordingSystem({
             connect: failing('no database'),
-            disconnect: () => void calls.push('disconnect')
+            disconnect: () => void calls.push('disconnect'),
         })
         add('a')
 
@@ -273,7 +273,7 @@ describe('shutdown()', () => {
         expect(system.state).toBe('stopped')
     })
 
-    test('waits for each manager\'s stop()', async () => {
+    test("waits for each manager's stop()", async () => {
         const gate = deferred()
         const { system, calls, add } = recordingSystem()
         add('a')
@@ -340,8 +340,16 @@ describe('shutdown()', () => {
         await stopping
 
         expect(calls).toEqual([
-            'connect', 'a.init', 'b.init', 'a.start', 'b.start', 'a.run', 'b.run',
-            'b.stop', 'a.stop', 'disconnect'
+            'connect',
+            'a.init',
+            'b.init',
+            'a.start',
+            'b.start',
+            'a.run',
+            'b.run',
+            'b.stop',
+            'a.stop',
+            'disconnect',
         ])
         expect(system.state).toBe('stopped')
     })
@@ -353,7 +361,7 @@ describe('shutdown()', () => {
             init: async () => {
                 await gate.promise
                 throw new Error('a is broken')
-            }
+            },
         })
 
         const booting = system.boot()
@@ -426,7 +434,10 @@ describe('subscription cleanup', () => {
         ticks = 0
         #subscriptions: Unsubscribe[] = []
 
-        constructor(context: Context, private readonly source: Source) {
+        constructor(
+            context: Context,
+            private readonly source: Source,
+        ) {
             super(context)
         }
 

@@ -131,7 +131,7 @@ describe('init(): the startup sync', () => {
 
         expect(manager.calls).toEqual([
             ['added', first],
-            ['added', second]
+            ['added', second],
         ])
     })
 
@@ -141,7 +141,7 @@ describe('init(): the startup sync', () => {
         const stop = watch(
             () => Object.keys(store.records),
             () => (changes += 1),
-            { flush: 'sync' }
+            { flush: 'sync' },
         )
 
         await manager.init()

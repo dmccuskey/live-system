@@ -38,7 +38,7 @@ class FakeService implements FeathersServiceLike {
     off(event: string, listener: Listener) {
         this.listeners.set(
             event,
-            (this.listeners.get(event) ?? []).filter(entry => entry !== listener)
+            (this.listeners.get(event) ?? []).filter(entry => entry !== listener),
         )
     }
     emit(event: string, record: unknown) {
@@ -115,7 +115,7 @@ describe('calls', () => {
             ['create', { name: 'A' }],
             ['update', 'a', { id: 'a', name: 'B' }],
             ['patch', 'a', { name: 'C' }],
-            ['remove', 'a']
+            ['remove', 'a'],
         ])
     })
 
@@ -133,7 +133,7 @@ describe('listeners', () => {
         ['onCreated', 'created'],
         ['onUpdated', 'updated'],
         ['onPatched', 'patched'],
-        ['onRemoved', 'removed']
+        ['onRemoved', 'removed'],
     ] as const)('%s hears the %s event, and no other', (method, event) => {
         const { service, source } = setup()
         const heard: Item[] = []
@@ -198,7 +198,7 @@ describe('idField', () => {
             ['create', { _id: 'a', name: 'A' }],
             ['create', { name: 'A' }],
             ['update', 'a', { _id: 'a', name: 'B' }],
-            ['patch', 'a', { name: 'C' }]
+            ['patch', 'a', { name: 'C' }],
         ])
     })
 

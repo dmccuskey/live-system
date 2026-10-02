@@ -105,7 +105,13 @@ describe('finishing a command', () => {
 
         await until(() => events.length === 1)
 
-        expect(events[0]).toEqual({ commandId: 'c1', userId: 'u1', serverId: 's1', type: 'search', outcome: 'completed' })
+        expect(events[0]).toEqual({
+            commandId: 'c1',
+            userId: 'u1',
+            serverId: 's1',
+            type: 'search',
+            outcome: 'completed',
+        })
         expect(server.load).toBe(0)
         expect(server.activeCommands).toBe(0)
     })

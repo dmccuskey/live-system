@@ -22,7 +22,7 @@ export interface ListenOptions {
 const STATUS_BY_CODE: Record<string, number> = {
     bad_request: 400,
     not_found: 404,
-    method_not_allowed: 405
+    method_not_allowed: 405,
 }
 
 /**
@@ -74,7 +74,7 @@ export class CommandServer {
         this.#server = Bun.serve({
             port: options.port,
             hostname: options.hostname,
-            fetch: request => this.handle(request)
+            fetch: request => this.handle(request),
         })
     }
 

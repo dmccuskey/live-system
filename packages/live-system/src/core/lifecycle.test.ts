@@ -20,8 +20,8 @@ function fakeSystem(work: Partial<LifecycleOwner> = {}): { system: LifecycleOwne
             initManagers: step('initManagers'),
             startManagers: step('startManagers'),
             runManagers: step('runManagers'),
-            stopManagers: step('stopManagers')
-        }
+            stopManagers: step('stopManagers'),
+        },
     }
 }
 
@@ -69,7 +69,7 @@ describe('run()', () => {
             initManagers: () => void seen.push(lifecycle.state),
             startManagers: () => void seen.push(lifecycle.state),
             runManagers: () => void seen.push(lifecycle.state),
-            stopManagers: () => void seen.push(lifecycle.state)
+            stopManagers: () => void seen.push(lifecycle.state),
         })
 
         await lifecycle.run()
@@ -102,7 +102,7 @@ describe('run()', () => {
             initManagers() {},
             startManagers() {},
             runManagers() {},
-            stopManagers() {}
+            stopManagers() {},
         })
 
         await lifecycle.run()
@@ -130,8 +130,8 @@ describe('a failing step', () => {
         {
             step: 'runManagers',
             state: 'started',
-            calls: ['connect', 'initManagers', 'startManagers', 'runManagers']
-        }
+            calls: ['connect', 'initManagers', 'startManagers', 'runManagers'],
+        },
     ]
 
     for (const { step, state, calls: expected } of cases) {
@@ -152,7 +152,7 @@ describe('a failing step', () => {
         const { system } = fakeSystem({
             connect: async () => {
                 throw error
-            }
+            },
         })
         const lifecycle = new LifecycleRunner(system)
 
@@ -165,7 +165,7 @@ describe('a failing step', () => {
             ...system,
             initManagers() {
                 throw new Error('no')
-            }
+            },
         })
 
         await expect(lifecycle.run()).rejects.toThrow('no')
@@ -245,7 +245,7 @@ describe('stop()', () => {
         const { system } = fakeSystem({
             stopManagers: async () => {
                 if (fail) throw new Error('still busy')
-            }
+            },
         })
         const lifecycle = new LifecycleRunner(system)
 
