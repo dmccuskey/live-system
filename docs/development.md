@@ -4,11 +4,11 @@ LiveSystem is at the design stage. The design is in [Architecture](architecture.
 
 ## Current Baseline
 
-The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)), and in `live-system/core` so are the `LifecycleRunner` ([Architecture](architecture.md#lifecyclerunner)), the `LiveSystem` class that boots and shuts down its managers ([Architecture](architecture.md#the-livesystem-object)), `BaseManager`, `LiveObject`, the `Unsubscribe` type and the optional `EventBus` ([Architecture](architecture.md#the-event-bus)). Commands are in place too: `core` has the `Command`, `CommandResponse` and `CommandError` types and the `fillRoute` helper, and `live-system/server` has the `Router` and the `CommandServer` ([Architecture](architecture.md#commands)). A `LiveSystem` given a router registers each manager's `routes()` in `addManager` and removes them on shutdown. The rest of `live-system` and every other package is an empty shell with a test that proves it loads and resolves the packages it depends on.
+The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)), and in `live-system/core` so are the `LifecycleRunner` ([Architecture](architecture.md#lifecyclerunner)), the `LiveSystem` class that boots and shuts down its managers ([Architecture](architecture.md#the-livesystem-object)), `BaseManager`, `LiveObject`, the `Unsubscribe` type and the optional `EventBus` ([Architecture](architecture.md#the-event-bus)). Commands are in place too: `core` has the `Command`, `CommandResponse` and `CommandError` types and the `fillRoute` helper, and `live-system/server` has the `Router` and the `CommandServer` ([Architecture](architecture.md#commands)). A `LiveSystem` given a router registers each manager's `routes()` in `addManager` and removes them on shutdown. Data is in place in `core` as well ([Architecture](architecture.md#data-and-record-sources)): the `RecordSource` interface and `MemoryRecordSource`, `defineRecordStore` for the Pinia store of one kind of record, `DataManager` with the startup sync, `LiveObjectManager`, which takes its live objects through `init()`, `start()` and `run()`, and the opt-in `debouncePatch`. The rest of `live-system` (`live-system/web`) and every other package is an empty shell with a test that proves it loads and resolves the packages it depends on.
 
 | Package | Folder | Depends on |
 |---|---|---|
-| `live-system` | `packages/live-system/` | `micro-fsm` |
+| `live-system` | `packages/live-system/` | `micro-fsm`, and from npm `pinia` and `vue` |
 | `micro-fsm` | `packages/micro-fsm/` | nothing |
 | `feathers-connect` | `packages/feathers-connect/` | nothing from this workspace |
 | `@virtual-infrastructure/protocol` | `examples/virtual-infrastructure/protocol/` | nothing |
@@ -61,7 +61,8 @@ Work happens on a branch named for the change (`feat/`, `fix/`, `docs/`), create
 These are ideas, not plans. Each needs discussion and a concrete use case before it is worked on.
 
 - **Reconnecting to the data service.** A connection lost after startup means missed changes. The startup sync ([ADR 008](decisions/008-startup-sync.md)) would have to run again on reconnecting.
-- **Other record sources.** An in-memory implementation and others beside Feathers ([ADR 006](decisions/006-record-source-boundary.md)).
+- **Other record sources** beside Feathers and the in-memory one, and with the first backend that does not create its own IDs, how IDs are assigned ([ADR 006](decisions/006-record-source-boundary.md)).
+- **Telling a failed refetch from a removed record.** During the startup sync any failed `get` counts as a removal, so a network error at that moment drops the record from the store ([ADR 008](decisions/008-startup-sync.md)).
 - **Authentication and permissions.** Out of scope for now ([ADR 013](decisions/013-server-web-symmetry.md)).
 - **Typed payloads per route.** A command's data typed by its route ([ADR 009](decisions/009-commands-events-crud.md)).
 - **A shared scheduling helper.** Only once several owners need the same thing ([ADR 015](decisions/015-timers-belong-to-owner.md)).

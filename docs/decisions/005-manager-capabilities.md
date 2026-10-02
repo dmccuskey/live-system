@@ -24,8 +24,9 @@ BaseManager
 ```
 
 - `BaseManager` has the lifecycle hooks (`init`, `start`, `run`, `stop`), the shared context, and `routes()`. Nothing else.
-- `DataManager<T>` adds what working with one kind of record needs: its record source ([ADR 006](006-record-source-boundary.md)), the startup sync ([ADR 008](008-startup-sync.md)), the projection into the store, and an optional registry of live objects ([ADR 002](002-managers-own-existence.md)).
-- A domain manager extends `DataManager<T>` and adds its behavior. `createObject(record)` is the hook it overrides when it owns live objects.
+- `DataManager<T>` adds what working with one kind of record needs: its record source ([ADR 006](006-record-source-boundary.md)), the startup sync ([ADR 008](008-startup-sync.md)), and the projection into the store.
+- `LiveObjectManager<T, O>` extends `DataManager<T>` for a manager whose records each have a live object: it creates, starts and destroys them ([ADR 002](002-managers-own-existence.md)). A manager that only mirrors records, as every manager of a web app does, stays a `DataManager<T>`.
+- A domain manager extends one of the two and adds its behavior. `createObject(record, options)` is the hook a `LiveObjectManager` implements.
 - A manager that needs no data extends `BaseManager` directly.
 
 Rejected:

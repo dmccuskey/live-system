@@ -15,7 +15,8 @@ An earlier prototype kept its objects in module-level registries, so two runtime
 - A manager creates, tracks and removes its objects, in a registry held on the manager instance.
 - An object owns its timers and listeners and releases them in `destroy()`. `destroy()` is idempotent: calling it twice does nothing the second time.
 - An object tells its owner that it is gone through an `onDestroyed` callback passed in at creation, not through an event.
-- A changed record updates the existing live object. It does not replace it.
+- A changed record does not replace the live object. The object holds no copy of its record: it reads the current one from the store by ID, so a change reaches it there.
+- An object has `init()`, `start()` and `run()`, in step with its manager's phases: during startup each is called when the manager reaches that phase, and an object created while the system runs gets all three, one after the other. An object whose step fails is destroyed and reported, and the others carry on ([ADR 014](014-failure-and-shutdown.md)).
 - A record does not imply a live object, and not every manager owns objects. A manager may only mirror records into the store.
 
 Rejected:
