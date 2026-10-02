@@ -225,7 +225,9 @@ describe('settings and scaling', () => {
 
     test('a first start creates the settings and the status', async () => {
         const url = await startDataService()
-        const { settings, status } = await connect(url)
+        const { users, settings, status } = await connect(url)
+        // No commands, so the utilization stays as the start leaves it
+        await users.create(quietUser)
 
         await startLiveServer(url)
 
@@ -276,16 +278,25 @@ describe('settings and scaling', () => {
         servers.onCreated(record => created.push(record.name))
         servers.onRemoved(record => removed.push(record.name))
         const { liveServer } = await startLiveServer(url)
-
-        for (const userId of ['u1', 'u2', 'u3']) {
-            liveServer.events.emit('commandRequested', { commandId: `c-${userId}`, userId, type: 'agentic' })
+        let isLoaded = true
+        let count = 0
+        const request = (userId: string) => {
+            liveServer.events.emit('commandRequested', { commandId: `c${++count}`, userId, type: 'agentic' })
         }
 
+        // The load is kept up until the server is there: however slowly the samples come, the policy sees it
+        liveServer.events.on('commandFinished', ({ userId }) => {
+            if (isLoaded) queueMicrotask(() => request(userId))
+        })
+        for (const userId of ['u1', 'u2', 'u3']) request(userId)
+
         await until(() => created.includes('Server 2'), 5_000)
+        isLoaded = false
         await until(() => removed.length === 1, 5_000)
 
-        expect(removed).toEqual(['Server 2'])
-        expect((await servers.find()).map(record => record.name)).toEqual(['Server 1'])
+        // Which of the two goes depends on where the last commands ran: the ServerManager's tests cover the choice
+        expect(removed).toHaveLength(1)
+        expect(await servers.find()).toHaveLength(1)
     }, 15_000)
 
     test('the status record follows the utilization of the servers', async () => {

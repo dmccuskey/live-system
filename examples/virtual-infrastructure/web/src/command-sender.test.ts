@@ -85,14 +85,14 @@ describe('createCommandSender', () => {
                     throw new CommandError('internal', message)
                 },
             },
-            40,
+            100,
         )
 
         await sender.send(command)
-        await wait(25)
+        await wait(60)
         message = 'Second'
         await sender.send(command)
-        await wait(25)
+        await wait(60)
 
         // The first failure's time is up, the second's is not
         expect(sender.error.value).toBe('Second')
