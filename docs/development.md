@@ -107,10 +107,10 @@ What a component computes is kept out of it, in plain TypeScript (`src/composabl
 
 ## Formatting
 
-The style is in `.prettierrc`: no semicolons, single quotes, four spaces, trailing commas, lines up to 120 characters. An editor with [Prettier](https://prettier.io) formats a file on saving it. To format by hand, from the repository root:
+The style is in `.prettierrc`: no semicolons, single quotes, four spaces, trailing commas, lines up to 120 characters. An editor with [Prettier](https://prettier.io) formats a file on saving it. To format the whole repository by hand, from its root:
 
 ```sh
-bun --bun x prettier --write examples/virtual-infrastructure/web
+bun --bun x prettier --write .
 ```
 
 ## Branch Workflow
