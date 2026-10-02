@@ -17,6 +17,7 @@ export const INITIAL_STATUS: Record<StatusKey, Omit<StatusRecord, 'id'>> = {
     [STATUS_KEYS.servers]: {
         key: STATUS_KEYS.servers,
         queueLength: 0,
+        waitingForRoom: 0,
         utilization: 0,
     },
 }

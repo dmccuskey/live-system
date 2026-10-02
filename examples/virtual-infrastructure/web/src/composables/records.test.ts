@@ -113,12 +113,12 @@ describe('useServerStatus', () => {
         const status = useServerStatus(pinia)
 
         store.load([
-            { id: 'x', key: 'other', queueLength: 9, utilization: 0.9 },
-            { id: 'y', key: 'servers', queueLength: 2, utilization: 0.5 },
+            { id: 'x', key: 'other', queueLength: 9, waitingForRoom: 0, utilization: 0.9 },
+            { id: 'y', key: 'servers', queueLength: 2, waitingForRoom: 0, utilization: 0.5 },
         ])
-        expect(status.value).toMatchObject({ queueLength: 2, utilization: 0.5 })
+        expect(status.value).toMatchObject({ queueLength: 2, waitingForRoom: 0, utilization: 0.5 })
 
-        store.set({ id: 'y', key: 'servers', queueLength: 0, utilization: 0.25 })
-        expect(status.value).toMatchObject({ queueLength: 0, utilization: 0.25 })
+        store.set({ id: 'y', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.25 })
+        expect(status.value).toMatchObject({ queueLength: 0, waitingForRoom: 0, utilization: 0.25 })
     })
 })

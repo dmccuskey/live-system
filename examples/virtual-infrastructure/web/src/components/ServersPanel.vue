@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The servers, and who decides how many there are: the scaling mode and the maximum utilization.
 import { createAddServerCommand } from '@virtual-infrastructure/protocol/servers/servers.commands'
+import { MAX_SERVERS } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import { createUpdateSettingsCommand } from '@virtual-infrastructure/protocol/settings/settings.commands'
 import {
     MAX_MAX_UTILIZATION,
@@ -23,6 +24,9 @@ const servers = useServers()
 const settings = useServerSettings()
 
 const isManual = computed(() => settings.value.scalingMode === 'manual')
+
+// Automatic scaling keeps no more than the most servers, so there the number is shown against that limit
+const count = computed(() => (isManual.value ? `${servers.value.length}` : `${servers.value.length} of ${MAX_SERVERS}`))
 
 // The slider's own value, in percent, from the first movement until the settings record has the change
 const draft = ref<number>()
@@ -59,7 +63,7 @@ async function setMaxUtilization(): Promise<void> {
 <template>
     <section class="panel">
         <div class="panel__header">
-            <h2>Servers ({{ servers.length }})</h2>
+            <h2>Servers ({{ count }})</h2>
             <button
                 v-if="isManual"
                 type="button"

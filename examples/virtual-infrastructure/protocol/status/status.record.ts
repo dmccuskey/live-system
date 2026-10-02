@@ -6,7 +6,16 @@ export interface ServerStatusRecord {
     key: string
     /** How many commands wait in the queue. */
     queueLength: number
-    /** The load of all servers over their capacity, a fraction from 0 to 1. With no server, 0. */
+    /**
+     * How many of them wait for room on a server: there is not enough capacity.
+     * The others wait for their own user, who has as many running as a user may.
+     */
+    waitingForRoom: number
+    /**
+     * The utilization that automatic scaling goes by, a fraction from 0 to 1 in whole
+     * percent: the average over `UTILIZATION_WINDOW` of the load and of what waits for room,
+     * over the capacity of the servers that take commands. With no such server, 1.
+     */
     utilization: number
 }
 

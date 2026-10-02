@@ -2,7 +2,7 @@
 export { createLiveServer, type LiveServer, type LiveServerOptions } from './app.ts'
 export type { DemoContext } from './context.ts'
 export { createProfile, pickCommandType, type UserProfile } from './profile.ts'
-export { ScalingPolicy, scaleDownMark, type ScalingDecision, type ScalingSample } from './scaling-policy.ts'
+export { ScalingPolicy, type ScalingDecision, type ScalingSample } from './scaling-policy.ts'
 export { ServerManager } from './server-manager.ts'
 export { SettingsManager } from './settings-manager.ts'
 export { StatusManager } from './status-manager.ts'

@@ -39,11 +39,13 @@ export interface UserRemovedEvent {
 /** The number of commands that wait in the `ServerManager`'s queue has changed. */
 export interface QueueChangedEvent {
     length: number
+    /** How many of the commands wait for room on a server, and not for their own user. */
+    waitingForRoom: number
 }
 
-/** The utilization of the servers as a whole has changed. */
+/** The average utilization of the servers as a whole has changed. */
 export interface UtilizationChangedEvent {
-    /** The load of all servers over their capacity, a fraction from 0 to 1. With no server, 0. */
+    /** As in the status record: the average the `ServerManager` scales by, a fraction from 0 to 1. */
     utilization: number
 }
 

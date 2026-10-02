@@ -37,7 +37,16 @@ describe('ServersPanel', () => {
             'Server 2',
             'Server 10',
         ])
-        expect(wrapper.get('h2').text()).toBe('Servers (2)')
+        expect(wrapper.get('h2').text()).toBe('Servers (2 of 8)')
+    })
+
+    test('in manual mode the number is shown without the limit, which is automatic scaling\'s', () => {
+        const { pinia, global } = createTestApp()
+
+        setSettings(pinia, 'manual')
+        useServerStore(pinia).load([serverRecord({ id: 'a', name: 'Server 1' })])
+
+        expect(mount(ServersPanel, { global }).get('h2').text()).toBe('Servers (1)')
     })
 
     test('shows the defaults while there is no settings record: automatic, 75%', () => {

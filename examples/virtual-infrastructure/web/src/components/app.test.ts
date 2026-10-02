@@ -121,7 +121,8 @@ describe('SystemStatus', () => {
         const wrapper = mount(SystemStatus, { global })
 
         expect(text(wrapper, 'utilization')).toBe('0%')
-        expect(text(wrapper, 'queue-length')).toBe('0')
+        expect(text(wrapper, 'queue-user')).toBe('0')
+        expect(text(wrapper, 'queue-capacity')).toBe('0')
 
         wrapper.unmount()
     })
@@ -129,12 +130,13 @@ describe('SystemStatus', () => {
     test('shows the utilization and the queue of the status record', () => {
         const { pinia, global } = createTestApp()
 
-        useStatusStore(pinia).load([{ id: 'x', key: 'servers', queueLength: 3, utilization: 0.82 }])
+        useStatusStore(pinia).load([{ id: 'x', key: 'servers', queueLength: 3, waitingForRoom: 1, utilization: 0.82 }])
 
         const wrapper = mount(SystemStatus, { global })
 
         expect(text(wrapper, 'utilization')).toBe('82%')
-        expect(text(wrapper, 'queue-length')).toBe('3')
+        expect(text(wrapper, 'queue-user')).toBe('2')
+        expect(text(wrapper, 'queue-capacity')).toBe('1')
 
         wrapper.unmount()
     })
@@ -144,30 +146,26 @@ describe('SystemStatus', () => {
         const store = useStatusStore(pinia)
         const wrapper = mount(SystemStatus, { global })
 
-        store.set({ id: 'x', key: 'servers', queueLength: 4, utilization: 0 })
+        store.set({ id: 'x', key: 'servers', queueLength: 4, waitingForRoom: 4, utilization: 0 })
         await nextTick()
 
-        expect(text(wrapper, 'queue-length')).toBe('4')
+        expect(text(wrapper, 'queue-capacity')).toBe('4')
 
         wrapper.unmount()
     })
 
-    test('follows the utilization as an average: part of the way at first, then all of it', async () => {
+    test('follows the utilization at once: the average is the record\'s', async () => {
         const { pinia, global } = createTestApp()
         const store = useStatusStore(pinia)
 
-        store.load([{ id: 'x', key: 'servers', queueLength: 0, utilization: 0.8 }])
+        store.load([{ id: 'x', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.8 }])
 
-        const wrapper = mount(SystemStatus, { props: { smoothing: { interval: 20, samples: 2 } }, global })
+        const wrapper = mount(SystemStatus, { global })
 
-        store.set({ id: 'x', key: 'servers', queueLength: 0, utilization: 0.4 })
+        store.set({ id: 'x', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.4 })
         await nextTick()
 
-        // Not yet read again
-        expect(text(wrapper, 'utilization')).toBe('80%')
-
-        await until(() => text(wrapper, 'utilization') === '60%')
-        await until(() => text(wrapper, 'utilization') === '40%')
+        expect(text(wrapper, 'utilization')).toBe('40%')
 
         wrapper.unmount()
     })
@@ -176,32 +174,8 @@ describe('SystemStatus', () => {
         const { global } = createTestApp()
         const wrapper = mount(SystemStatus, { global })
 
-        expect(wrapper.get('dt').text()).toBe('Utilization, 15 s average')
+        expect(wrapper.get('dt').text()).toBe('Utilization, 10 s average')
 
         wrapper.unmount()
-    })
-
-    test('stops reading when it is unmounted', async () => {
-        const { pinia, global } = createTestApp()
-        const store = useStatusStore(pinia)
-        const wrapper = mount(SystemStatus, { props: { smoothing: { interval: 5, samples: 1 } }, global })
-        let reads = 0
-
-        wrapper.unmount()
-
-        const record = { id: 'x', key: 'servers', queueLength: 0 }
-
-        store.set(
-            Object.defineProperty({ ...record, utilization: 0 }, 'utilization', {
-                get: () => {
-                    reads++
-
-                    return 0.5
-                },
-            }),
-        )
-        await new Promise(resolve => setTimeout(resolve, 30))
-
-        expect(reads).toBe(0)
     })
 })

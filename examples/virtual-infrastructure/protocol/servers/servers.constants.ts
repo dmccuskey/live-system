@@ -31,17 +31,25 @@ export const MAX_QUEUED_PER_USER = 1
 export const MIN_SERVERS = 1
 export const MAX_SERVERS = 8
 
-/** How often the utilization is sampled in automatic mode, in milliseconds. */
+/** How often the load is sampled, in milliseconds. */
 export const SCALING_SAMPLE_INTERVAL = 1_000
 
-/** How long the utilization must stay above the maximum before a server is added, in milliseconds. */
-export const SCALE_UP_WINDOW = 5_000
+/**
+ * How long the utilization is averaged over, in milliseconds. Commands start and
+ * end all the time, so the average is what the UI shows and what automatic scaling goes by.
+ */
+export const UTILIZATION_WINDOW = 10_000
 
-/** How long the utilization must stay below the lower mark before a server is removed, in milliseconds. */
-export const SCALE_DOWN_WINDOW = 15_000
+/** How long after a decision the next server may be added, in milliseconds. */
+export const SCALE_UP_WAIT = 5_000
 
-/** How far the lower mark is below the maximum utilization. The gap keeps scaling from going back and forth. */
-export const SCALE_DOWN_GAP = 0.4
+/** How long after a decision the next server may be removed, in milliseconds. */
+export const SCALE_DOWN_WAIT = 15_000
 
-/** The lower mark is never below this, however low the maximum utilization is set. */
-export const MIN_SCALE_DOWN_UTILIZATION = 0.1
+/**
+ * How far above the maximum the utilization may go before a server is added,
+ * and how far below it before one is removed. The band is narrow so that the
+ * demo moves: servers come and go as the load does.
+ */
+export const SCALE_UP_MARGIN = 0.05
+export const SCALE_DOWN_MARGIN = 0.15

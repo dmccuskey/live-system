@@ -39,7 +39,9 @@ export class StatusManager extends DataManager<StatusRecord, DemoContext> {
         const { events } = this.context
 
         this.#subscriptions.push(
-            events.on('servers.queueChanged', event => this.#report(STATUS_KEYS.servers, { queueLength: event.length })),
+            events.on('servers.queueChanged', event => 
+                this.#report(STATUS_KEYS.servers, { queueLength: event.length, waitingForRoom: event.waitingForRoom }),
+            ),
             events.on('servers.utilizationChanged', event =>
                 this.#report(STATUS_KEYS.servers, { utilization: event.utilization }),
             ),
