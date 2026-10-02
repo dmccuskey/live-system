@@ -26,12 +26,13 @@ An earlier web prototype had one aggregate data manager. It wrapped every data s
   With one `DataManager` per data service there is no single data manager for sending to belong to, so it has an object of its own.
 
   `send` resolves with the command's response when the server has accepted it, and rejects with a structured error when it failed ([ADR 014](014-failure-and-shutdown.md)). Results and progress arrive as record changes ([ADR 009](009-commands-events-crud.md)).
-- A web app may have a startup sequence, smaller than the server's: connect to the data service, have the data managers load into the store, then show the app.
+- A web app has a startup sequence, smaller than the server's: connect to the data service, then have the data managers load into the store. The app is shown from the beginning, not at the end: it renders from the startup's status (starting, running, failed), kept as reactive state, so it can show a loading screen or the reason for a failure. Whether the connection is up after startup is a separate condition, which the application shows from its connection.
 
 Rejected:
 
 - **One aggregate data manager that also sends commands.** It mixes two jobs and grows with every data service added.
 - **Separate manager hierarchies for server and web.** The data managers would be written twice.
+- **Showing the app only once startup has finished.** Nothing can be shown while it starts, or when it fails.
 - **Transport errors handled in each UI component.** The transport's details spread through the UI. A component still decides what to show when its command fails.
 
 ## Consequences
