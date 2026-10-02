@@ -176,41 +176,27 @@ The difference is simply who makes the scaling decision.
 
 The simulator should model user experience rather than treating server utilization as the only important metric.
 
-A user's expected throughput is based on their activity rate.
+A user's frustration is a fraction from 0 to 1, kept in its record. It moves only with what becomes of the user's commands: bad outcomes add to it, and completed commands relieve it.
 
-For example:
+| Outcome | Event | Effect on frustration |
+|---|---|---|
+| Refused, the user already has a command waiting | `commandRefused` with `queue_full` | adds 0.05 |
+| Waited in the queue | `commandQueued`, then `commandStarted` | adds 0.01 for each second waited, once, when a server takes the command |
+| Aborted, its server went away under it | `commandFinished` with `aborted` | adds 0.05, plus 0.15 times the fraction of its duration the command had run |
+| Completed | `commandFinished` with `completed` | multiplies it by 0.9 |
+| Dropped, the user was removed or the system stopped | `commandRefused` with `dropped` | none, and its wait counts as nothing |
 
-```text
-Expected:
-10 commands/minute
+An abort weighs more than a refusal: the user waited and then lost the work. The longer the command had run, the more was lost.
 
-Actual:
-6 commands/minute
-```
+Relief comes from being served, never from time passing:
 
-The difference represents unmet demand.
+- A busy user recovers faster than a quiet one. About 7 completed commands halve the frustration.
+- A user that is not being served does not calm down: with nothing completing, the frustration stays where it is.
+- A command still waiting adds nothing yet. Its user shows frustration meanwhile, because a user may have only one command waiting and its further ones are refused.
 
-Frustration increases as unmet demand persists and decreases as the system recovers.
+The `VirtualUser` does the counting. It listens on the event bus for the outcomes of its own commands, keeps the value in memory, and writes it to its record through `debouncePatch`. Waits and run times are measured in simulated time. No command outlives the live server, so at startup each user's frustration is reset to 0.
 
-Conceptually:
-
-```text
-expected throughput
-        │
-        ▼
-   ┌──────────┐
-   │  User    │
-   └────┬─────┘
-        │
-        ▼
-actual throughput
-        │
-        ▼
-   unmet demand
-        │
-        ▼
-    frustration
-```
+The numbers are placeholders, in the protocol's `users/users.constants.ts`, and the arithmetic is in the live server's `frustration.ts`.
 
 Frustration is therefore an emergent property of the system rather than a manually controlled variable.
 
