@@ -3,7 +3,17 @@
     "version": "0.0.0",
     "private": true,
     "type": "module",
+    "scripts": {
+        "start": "bun src/main.ts"
+    },
     "dependencies": {
+        "@feathersjs/errors": "^5.0.50",
+        "@feathersjs/feathers": "^5.0.50",
+        "@feathersjs/socketio": "^5.0.50",
+        "@feathersjs/transport-commons": "^5.0.50",
         "@virtual-infrastructure/protocol": "workspace:*"
+    },
+    "devDependencies": {
+        "feathers-connect": "workspace:*"
     }
 }
