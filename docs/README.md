@@ -1,6 +1,6 @@
 # LiveSystem Documentation
 
-New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the design stage: the workspace is scaffolded and only the state machine is implemented, so these pages describe what will be built.
+New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the design stage: the workspace is scaffolded and only the state machine and the lifecycle runner are implemented, so these pages describe what will be built.
 
 ## Internals
 
