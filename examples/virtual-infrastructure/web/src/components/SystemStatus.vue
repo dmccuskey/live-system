@@ -1,33 +1,35 @@
 <script setup lang="ts">
 // What the ServerManager reports of itself, from its status record.
-import { onScopeDispose } from 'vue'
-import { useServerStatus } from '../composables/records.ts'
+import { UTILIZATION_WINDOW } from '@virtual-infrastructure/protocol/servers/servers.constants'
+import { computed } from 'vue'
+import { useServerSettings, useServerStatus } from '../composables/records.ts'
 import { percent } from '../format.ts'
-import { createMovingAverage } from '../moving-average.ts'
-import type { MovingAverageOptions } from '../moving-average.ts'
 
-// The utilization jumps with every command that starts or ends, so it is shown as its average over 15 seconds
-const props = withDefaults(defineProps<{ smoothing?: MovingAverageOptions }>(), {
-    smoothing: () => ({ interval: 1_000, samples: 15 }),
-})
-
+// The utilization in the record is the live server's average, the one automatic scaling goes by
 const status = useServerStatus()
-const { value: utilization, stop } = createMovingAverage(() => status.value.utilization, props.smoothing)
+const seconds = Math.round(UTILIZATION_WINDOW / 1_000)
 
-onScopeDispose(stop)
-
-const seconds = Math.round((props.smoothing.interval * props.smoothing.samples) / 1_000)
+// Above the maximum that automatic scaling is set to keep
+const settings = useServerSettings()
+const isOver = computed(
+    () => settings.value.scalingMode === 'automatic' && status.value.utilization > settings.value.maxUtilization,
+)
 </script>
 
 <template>
     <dl class="status">
         <div>
             <dt>Utilization, {{ seconds }} s average</dt>
-            <dd data-test="utilization">{{ percent(utilization) }}</dd>
+            <dd data-test="utilization" :class="{ over: isOver }">{{ percent(status.utilization) }}</dd>
         </div>
         <div>
-            <dt>Commands waiting</dt>
-            <dd data-test="queue-length">{{ status.queueLength }}</dd>
+            <dt>Command queue</dt>
+            <dd>
+                <span class="reason">User:</span>
+                <span data-test="queue-user">{{ status.queueLength - status.waitingForRoom }}</span
+                ><span class="reason">, Capacity:</span>
+                <span data-test="queue-capacity">{{ status.waitingForRoom }}</span>
+            </dd>
         </div>
     </dl>
 </template>
@@ -48,5 +50,15 @@ dd {
     margin: 0;
     font-size: 1.2rem;
     font-weight: 600;
+}
+
+.over {
+    color: var(--high);
+}
+
+.reason {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 400;
 }
 </style>

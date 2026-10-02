@@ -366,10 +366,22 @@ describe('the queue\'s length', () => {
 
         request('agentic', 'u2')
         request('agentic', 'u3')
-        expect(lengths).toEqual([{ length: 1 }, { length: 2 }])
+        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }, { length: 2, waitingForRoom: 2 }])
 
         context.events.emit('userRemoved', { userId: 'u2' })
-        expect(lengths).toEqual([{ length: 1 }, { length: 2 }, { length: 1 }])
+        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }, { length: 2, waitingForRoom: 2 }, { length: 1, waitingForRoom: 1 }])
+    })
+
+    test('a command that waits for its own user is not one that waits for room', async () => {
+        const { context, request } = await boot([server('s1'), server('s2')])
+        const lengths = collect(context.events, 'servers.queueChanged')
+
+        for (let count = 0; count < 4; count++) request('search', 'u1')
+        expect(lengths).toEqual([{ length: 1, waitingForRoom: 0 }])
+
+        await until(() => lengths.length === 2)
+
+        expect(lengths.at(-1)).toEqual({ length: 0, waitingForRoom: 0 })
     })
 
     test('a refused command does not change it', async () => {
@@ -380,7 +392,7 @@ describe('the queue\'s length', () => {
         request('agentic', 'u2')
         request('agentic', 'u2')
 
-        expect(lengths).toEqual([{ length: 1 }])
+        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }])
     })
 
     test('it is announced as empty once what waited has started', async () => {
@@ -391,7 +403,7 @@ describe('the queue\'s length', () => {
         request('search', 'u2')
         await until(() => lengths.length === 2)
 
-        expect(lengths).toEqual([{ length: 1 }, { length: 0 }])
+        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }, { length: 0, waitingForRoom: 0 }])
     })
 
     test('the shutdown announces it as empty', async () => {
@@ -402,66 +414,7 @@ describe('the queue\'s length', () => {
         request('agentic', 'u2')
         await system.shutdown()
 
-        expect(lengths).toEqual([{ length: 1 }, { length: 0 }])
-    })
-})
-
-describe('the utilization', () => {
-    test('it is announced as commands start and finish', async () => {
-        const { context, request } = await boot([server('s1'), server('s2')])
-        const announced = collect(context.events, 'servers.utilizationChanged')
-
-        request('agentic', 'u1')
-        request('search', 'u2')
-        expect(announced).toEqual([{ utilization: 0.2 }, { utilization: 0.25 }])
-
-        await until(() => announced.at(-1)?.utilization === 0)
-
-        expect(announced.map(event => event.utilization)).toEqual([0.2, 0.25, 0.2, 0])
-    })
-
-    test('it covers all servers: one added or removed changes it', async () => {
-        const { context, send, request } = await boot([server('s1')])
-        const announced = collect(context.events, 'servers.utilizationChanged')
-
-        request('agentic')
-        const { id } = result(await send<AddServerResult>(createAddServerCommand()))
-        await send(createRemoveServerCommand(id))
-
-        expect(announced.map(event => event.utilization)).toEqual([0.4, 0.2, 0.4])
-    })
-
-    test('a draining server still counts', async () => {
-        const stub = stubPolicy()
-        const { manager, context, request } = await boot([server('s1'), server('s2')], stub.policy)
-        const announced = collect(context.events, 'servers.utilizationChanged')
-
-        request('agentic', 'u1')
-        request('agentic', 'u2')
-        announce(context)
-        stub.decisions.push('down')
-        await until(() => manager.getObject('s2')?.isDraining === true)
-
-        expect(announced.at(-1)).toEqual({ utilization: 0.4 })
-    })
-
-    test('with no server it is 0, and nothing is announced that did not change', async () => {
-        const { context, send } = await boot([server('s1')])
-        const announced = collect(context.events, 'servers.utilizationChanged')
-
-        await send(createRemoveServerCommand('s1'))
-
-        expect(announced).toEqual([])
-    })
-
-    test('the shutdown announces it as 0', async () => {
-        const { system, context, request } = await boot([server('s1')])
-        const announced = collect(context.events, 'servers.utilizationChanged')
-
-        request('agentic')
-        await system.shutdown()
-
-        expect(announced.at(-1)).toEqual({ utilization: 0 })
+        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }, { length: 0, waitingForRoom: 0 }])
     })
 })
 
@@ -481,7 +434,12 @@ const stubPolicy = () => {
     const samples: ScalingSample[] = []
     const decisions: ScalingDecision[] = []
     const counts = { resets: 0 }
+    // The average the policy says it has
+    const state = { utilization: 0 }
     const policy: ScalingDecider = {
+        get utilization() {
+            return state.utilization
+        },
         sample: sample => {
             samples.push(sample)
 
@@ -499,7 +457,7 @@ const stubPolicy = () => {
         await until(() => samples.length > seen && decisions.length === 0)
     }
 
-    return { policy, samples, decisions, counts, sampled }
+    return { policy, samples, decisions, counts, state, sampled }
 }
 
 // Long enough for several samples
@@ -507,15 +465,62 @@ const aWhile = () => Bun.sleep(1_000 * TIME_SCALE * 5)
 
 const ids = async (source: MemoryRecordSource<ServerRecord>) => (await source.find()).map(record => record.id)
 
-describe('the scaling mode', () => {
-    test('in manual mode nothing is sampled', async () => {
+describe('the utilization', () => {
+    test("it is the policy's average, announced after a sample when it has changed", async () => {
         const stub = stubPolicy()
-        const { manager } = await boot([server('s1')], stub.policy)
+        const { context } = await boot([server('s1')], stub.policy)
+        const announced = collect(context.events, 'servers.utilizationChanged')
 
+        announce(context)
+        stub.state.utilization = 0.4
+        await stub.sampled()
+        await stub.sampled()
+
+        expect(announced).toEqual([{ utilization: 0.4 }])
+
+        stub.state.utilization = 0.25
+        await stub.sampled()
+
+        expect(announced).toEqual([{ utilization: 0.4 }, { utilization: 0.25 }])
+    })
+
+    test('it is announced in whole percent', async () => {
+        const stub = stubPolicy()
+        const { context } = await boot([server('s1')], stub.policy)
+        const announced = collect(context.events, 'servers.utilizationChanged')
+
+        stub.state.utilization = 0.4567
+        await stub.sampled()
+        stub.state.utilization = 0.4612
+        await stub.sampled()
+
+        expect(announced).toEqual([{ utilization: 0.46 }])
+    })
+
+    test('it is announced in manual mode too', async () => {
+        const stub = stubPolicy()
+        const { manager, context } = await boot([server('s1')], stub.policy)
+        const announced = collect(context.events, 'servers.utilizationChanged')
+
+        stub.state.utilization = 0.6
+        await stub.sampled()
+
+        expect(manager.scalingMode).toBe('manual')
+        expect(announced).toEqual([{ utilization: 0.6 }])
+    })
+})
+
+describe('the scaling mode', () => {
+    test('in manual mode the samples go on, and no decision is acted on', async () => {
+        const stub = stubPolicy()
+        const { manager, source } = await boot([server('s1'), server('s2')], stub.policy)
+
+        stub.decisions.push('up', 'down')
+        await stub.sampled()
         await aWhile()
 
         expect(manager.scalingMode).toBe('manual')
-        expect(stub.samples).toEqual([])
+        expect(await ids(source)).toEqual(['s1', 's2'])
     })
 
     test('with no settings record the defaults are in force', async () => {
@@ -588,21 +593,20 @@ describe('the scaling mode', () => {
         expect(await ids(source)).toEqual(['s1', 's2'])
     })
 
-    test('back in manual mode they work again, and nothing is sampled', async () => {
+    test('back in manual mode they work again, and no decision is acted on', async () => {
         const stub = stubPolicy()
         const { context, source, send } = await boot([server('s1'), server('s2')], stub.policy)
 
         announce(context)
         announce(context, { scalingMode: 'manual' })
 
-        const sampled = stub.samples.length
-
         expect(await send(createRemoveServerCommand('s2'))).toEqual({ status: 'accepted' })
         result(await send<AddServerResult>(createAddServerCommand()))
+        stub.decisions.push('up')
+        await stub.sampled()
         await aWhile()
 
         expect(await ids(source)).toHaveLength(2)
-        expect(stub.samples).toHaveLength(sampled)
     })
 
     test('a change of mode begins the policy anew, a change of the maximum does not', async () => {
@@ -623,7 +627,7 @@ describe('the scaling mode', () => {
 })
 
 describe('a sample', () => {
-    test('it is the load over the capacity, with the maximum from the settings', async () => {
+    test('it is the load and the capacity, with the maximum from the settings', async () => {
         const stub = stubPolicy()
         const { context, request } = await boot([server('s1'), server('s2')], stub.policy)
 
@@ -631,7 +635,7 @@ describe('a sample', () => {
         announce(context, { maxUtilization: 0.6 })
         await stub.sampled()
 
-        expect(stub.samples.at(-1)).toEqual({ utilization: 0.2, isQueued: false, maxUtilization: 0.6 })
+        expect(stub.samples.at(-1)).toEqual({ load: 4, waiting: 0, capacity: 20, maxUtilization: 0.6 })
     })
 
     test('a command that waits for room is demand beyond the capacity', async () => {
@@ -643,7 +647,7 @@ describe('a sample', () => {
         announce(context)
         await stub.sampled()
 
-        expect(stub.samples.at(-1)).toMatchObject({ utilization: 1, isQueued: true })
+        expect(stub.samples.at(-1)).toMatchObject({ load: 4, waiting: 4, capacity: 4 })
     })
 
     test('a command that waits for its own user is not', async () => {
@@ -655,10 +659,10 @@ describe('a sample', () => {
         await stub.sampled()
 
         expect(manager.queueLength).toBe(1)
-        expect(stub.samples.at(-1)).toMatchObject({ utilization: 0.6, isQueued: false })
+        expect(stub.samples.at(-1)).toMatchObject({ load: 6, waiting: 0, capacity: 10 })
     })
 
-    test('with no server the utilization counts as full', async () => {
+    test('with no server there is no capacity', async () => {
         const stub = stubPolicy()
         const { context, send } = await boot([server('s1')], stub.policy)
 
@@ -666,7 +670,7 @@ describe('a sample', () => {
         announce(context)
         await stub.sampled()
 
-        expect(stub.samples.at(-1)).toMatchObject({ utilization: 1, isQueued: false })
+        expect(stub.samples.at(-1)).toMatchObject({ load: 0, waiting: 0, capacity: 0 })
     })
 })
 
@@ -708,6 +712,62 @@ describe('scaling up', () => {
         await aWhile()
 
         expect(await ids(source)).toHaveLength(MAX_SERVERS)
+    })
+})
+
+describe('more servers than automatic mode keeps', () => {
+    const many = (count: number) => Array.from({ length: count }, (_, index) => server(`s${index + 1}`))
+
+    test('the idle ones beyond the most are removed, the newest first', async () => {
+        const stub = stubPolicy()
+        const { manager, context, source } = await boot(many(MAX_SERVERS + 2), stub.policy)
+
+        announce(context)
+        await stub.sampled()
+        await until(() => manager.objects.size === MAX_SERVERS)
+
+        expect(await ids(source)).toEqual(many(MAX_SERVERS).map(record => record.id))
+    })
+
+    test('a busy one is drained, and nothing is aborted', async () => {
+        const stub = stubPolicy()
+        const { manager, context, request } = await boot(many(MAX_SERVERS + 1), stub.policy)
+        const events = finishedEvents(context)
+
+        for (let count = 0; count <= MAX_SERVERS; count++) request('agentic', `u${count}`)
+        announce(context)
+        await stub.sampled()
+
+        expect([...manager.objects.values()].filter(object => object.isDraining).map(object => object.id)).toEqual([
+            `s${MAX_SERVERS + 1}`,
+        ])
+
+        await until(() => manager.objects.size === MAX_SERVERS)
+
+        expect(events.map(event => event.outcome)).not.toContain('aborted')
+    })
+
+    test('scaling up does not take a draining server back beyond the most', async () => {
+        const stub = stubPolicy()
+        const { manager, context, request } = await boot(many(MAX_SERVERS + 1), stub.policy)
+
+        for (let count = 0; count <= MAX_SERVERS; count++) request('agentic', `u${count}`)
+        announce(context)
+        await stub.sampled()
+        stub.decisions.push('up')
+        await stub.sampled()
+
+        expect(manager.getObject(`s${MAX_SERVERS + 1}`)?.isDraining).toBe(true)
+    })
+
+    test('in manual mode they stay', async () => {
+        const stub = stubPolicy()
+        const { source } = await boot(many(MAX_SERVERS + 2), stub.policy)
+
+        await stub.sampled()
+        await aWhile()
+
+        expect(await ids(source)).toHaveLength(MAX_SERVERS + 2)
     })
 })
 
@@ -801,7 +861,7 @@ describe('scaling down', () => {
         expect([...manager.objects.values()].filter(object => object.isDraining)).toHaveLength(1)
     })
 
-    test('a draining server is left out of the utilization', async () => {
+    test('a draining server is left out of the sample', async () => {
         const stub = stubPolicy()
         const { context, request } = await boot([server('s1'), server('s2')], stub.policy)
 
@@ -809,14 +869,13 @@ describe('scaling down', () => {
         request('agentic', 'u2')
         announce(context)
         await stub.sampled()
-        expect(stub.samples.at(-1)?.utilization).toBe(0.4)
+        expect(stub.samples.at(-1)).toMatchObject({ load: 8, capacity: 20 })
 
         stub.decisions.push('down')
         await stub.sampled()
         await stub.sampled()
 
-        expect(stub.samples.at(-1)?.utilization).toBe(0.4)
-        expect(stub.samples.at(-1)).toMatchObject({ isQueued: false })
+        expect(stub.samples.at(-1)).toMatchObject({ load: 4, waiting: 0, capacity: 10 })
     })
 
     test('scaling up takes a draining server back, and adds none', async () => {
@@ -881,10 +940,10 @@ describe('scaling down', () => {
 })
 
 describe('automatic scaling, with its own policy', () => {
-    test('utilization that stays above the maximum adds a server', async () => {
+    test('an average utilization above the band adds a server', async () => {
         const { manager, context, source, request } = await boot([server('s1')])
 
-        announce(context)
+        announce(context, { maxUtilization: 0.7 })
         request('agentic', 'u1')
         request('agentic', 'u2')
 

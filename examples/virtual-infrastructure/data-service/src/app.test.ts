@@ -109,10 +109,10 @@ describe('records', () => {
         const id = expect.stringMatching(/^[0-9a-f-]{36}$/)
 
         await settings.create({ key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 })
-        await status.create({ key: 'servers', queueLength: 2, utilization: 0.4 })
+        await status.create({ key: 'servers', queueLength: 2, waitingForRoom: 0, utilization: 0.4 })
 
         expect(await settings.find()).toEqual([{ id, key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 }])
-        expect(await status.find()).toEqual([{ id, key: 'servers', queueLength: 2, utilization: 0.4 }])
+        expect(await status.find()).toEqual([{ id, key: 'servers', queueLength: 2, waitingForRoom: 0, utilization: 0.4 }])
     })
 
     test('patch, update and remove change the record', async () => {

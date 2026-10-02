@@ -39,8 +39,10 @@ const serverNumber = (name: string | undefined): number => Number(/(\d+)$/.exec(
  * Who decides how many servers there are is a setting. The manager watches
  * the settings store for the record with its key. In manual mode it is the Demo User, through the
  * routes. In automatic mode the routes are refused, and the manager adds a
- * server when the utilization stays above the maximum, and removes one when it
- * stays well below. The `SettingsManager` sees to it that the record is
+ * server when the average utilization is above the maximum, and removes one
+ * when the others would do. It keeps no more than `MAX_SERVERS`: those beyond,
+ * which manual mode may have left, are removed or drained. The average is the `ScalingPolicy`'s: the manager
+ * samples the load in either mode, and announces the average for the UI to show. The `SettingsManager` sees to it that the record is
  * there. Should it be missing all the same, the defaults are in force.
  */
 export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer, DemoContext> {
@@ -49,8 +51,9 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     #queue: CommandRequestedEvent[] = []
     // How many commands each user has running
     #running = new Map<string, number>()
-    // The queue's length as it was last announced
+    // The queue's length as it was last announced, and how many of the commands waited for room
     #announcedLength = 0
+    #announcedForRoom = 0
     #settings: Omit<SettingsRecord, 'id'> = DEFAULT_SETTINGS[SETTINGS_KEYS.servers]
     // The utilization as it was last announced
     #announcedUtilization = 0
@@ -96,7 +99,6 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
 
         this.#subscriptions.push(
             events.on('commandRequested', event => this.#request(event)),
-            events.on('commandStarted', () => this.#announceUtilization()),
             events.on('commandFinished', event => this.#finished(event)),
             events.on('userRemoved', event => this.#drop(queued => queued.userId === event.userId)),
         )
@@ -115,7 +117,7 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         if (this.objects.size === 0) await this.#createServer()
     }
 
-    /** Begins to sample the utilization, for automatic mode to act on. */
+    /** Begins to sample the load, for the utilization to show and for automatic mode to act on. */
     override async run(): Promise<void> {
         await super.run()
 
@@ -153,20 +155,17 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         this.#running.clear()
 
         await super.stop()
-        this.#announceUtilization()
     }
 
     /** A new server is room for what waits, and more capacity. */
     protected override recordAdded(record: ServerRecord): void {
         super.recordAdded(record)
         this.#serve()
-        this.#announceUtilization()
     }
 
     protected override recordRemoved(record: ServerRecord): void {
         super.recordRemoved(record)
         this.#removing.delete(record.id)
-        this.#announceUtilization()
     }
 
     protected override createObject(record: ServerRecord, options: LiveObjectOptions): VirtualServer {
@@ -204,10 +203,9 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         if (server?.isDraining && !server.isDestroyed && server.activeCommands === 0) this.#remove(server.id)
 
         this.#serve()
-        this.#announceUtilization()
     }
 
-    // Starts what can start, and tells of the queue's length when that changed it
+    // Starts what can start, and tells of the queue when that changed it
     #serve(): void {
         this.#start()
         this.#announceQueue()
@@ -277,19 +275,23 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
 
     #announceQueue(): void {
         const length = this.#queue.length
+        const waitingForRoom = this.#waitingForRoom().length
 
-        if (length === this.#announcedLength) return
+        if (length === this.#announcedLength && waitingForRoom === this.#announcedForRoom) return
 
         this.#announcedLength = length
-        this.context.events.emit('servers.queueChanged', { length })
+        this.#announcedForRoom = waitingForRoom
+        this.context.events.emit('servers.queueChanged', { length, waitingForRoom })
     }
 
-    // Tells of the utilization of all servers, draining ones too, when it has changed
+    // The commands in the queue whose user could have one more running: what they wait for is room on a server
+    #waitingForRoom(): CommandRequestedEvent[] {
+        return this.#queue.filter(event => (this.#running.get(event.userId) ?? 0) < MAX_RUNNING_PER_USER)
+    }
+
+    // Tells of the policy's average utilization, in whole percent, when it has changed
     #announceUtilization(): void {
-        const servers = [...this.objects.values()].filter(server => !server.isDestroyed)
-        const capacity = servers.reduce((sum, server) => sum + server.capacity, 0)
-        const load = servers.reduce((sum, server) => sum + server.load, 0)
-        const utilization = capacity === 0 ? 0 : load / capacity
+        const utilization = Math.round(this.#policy.utilization * 100) / 100
 
         if (utilization === this.#announcedUtilization) return
 
@@ -337,37 +339,46 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     #settingsChanged(record: SettingsRecord | undefined): void {
         const settings = record ?? DEFAULT_SETTINGS[SETTINGS_KEYS.servers]
 
-        // A mode just entered decides from what it sees itself
+        // A mode just entered waits its full time before it decides
         if (settings.scalingMode !== this.#settings.scalingMode) this.#policy.reset()
 
         this.#settings = settings
     }
 
     /**
-     * Automatic mode's look at the servers, at each interval. The utilization
-     * is the load over the capacity of the servers that take commands, and
-     * with no such server it counts as full. A command that waits for its own
-     * user's running commands is not demand a further server would meet.
+     * The look at the servers, at each interval: the load and the capacity of
+     * those that take commands, and the cost of the commands that wait for
+     * room. A command that waits for its own user's running commands is not
+     * demand a further server would meet. The policy's decision is acted on
+     * in automatic mode only.
      */
     #sample(): void {
-        if (this.#settings.scalingMode !== 'automatic') return
-
         const servers = this.#available()
-        const capacity = servers.reduce((sum, server) => sum + server.capacity, 0)
-        const load = servers.reduce((sum, server) => sum + server.load, 0)
-
         const decision = this.#policy.sample({
-            utilization: capacity === 0 ? 1 : load / capacity,
-            isQueued: this.#queue.some(event => (this.#running.get(event.userId) ?? 0) < MAX_RUNNING_PER_USER),
+            load: servers.reduce((sum, server) => sum + server.load, 0),
+            waiting: this.#waitingForRoom().reduce((sum, event) => sum + COMMAND_TYPES[event.type].cost, 0),
+            capacity: servers.reduce((sum, server) => sum + server.capacity, 0),
             maxUtilization: this.#settings.maxUtilization,
         })
+
+        this.#announceUtilization()
+
+        if (this.#settings.scalingMode !== 'automatic') return
+
+        // More servers than automatic mode keeps, as manual mode may leave them: the limit comes first
+        if (servers.length > MAX_SERVERS) {
+            this.#retireExtra(servers)
+            return
+        }
 
         if (decision === 'up') this.#scaleUp()
         if (decision === 'down') this.#scaleDown(servers)
     }
 
-    // A server that drains is taken back before a new one is added
+    // A server that drains is taken back before a new one is added. At the most servers, neither.
     #scaleUp(): void {
+        if (this.#available().length >= MAX_SERVERS) return
+
         const draining = [...this.objects.values()].find(
             server => server.isDraining && !server.isDestroyed && !this.#removing.has(server.id),
         )
@@ -393,11 +404,23 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
 
         if (isLeaving || servers.length <= MIN_SERVERS) return
 
-        // The least loaded first, and of those the newest
-        const [server] = servers.toSorted((a, b) => a.load - b.load || this.#numberOf(b) - this.#numberOf(a))
+        const [server] = this.#leastLoaded(servers)
 
-        if (!server) return
+        if (server) this.#retire(server)
+    }
 
+    // The servers beyond the most leave together, by the same choice as in scaling down
+    #retireExtra(servers: VirtualServer[]): void {
+        for (const server of this.#leastLoaded(servers).slice(0, servers.length - MAX_SERVERS)) this.#retire(server)
+    }
+
+    // The least loaded first, and of those the newest
+    #leastLoaded(servers: VirtualServer[]): VirtualServer[] {
+        return servers.toSorted((a, b) => a.load - b.load || this.#numberOf(b) - this.#numberOf(a))
+    }
+
+    // An idle server is removed at once. A busy one is drained, and removed when its last command ends.
+    #retire(server: VirtualServer): void {
         if (server.activeCommands === 0) {
             this.#remove(server.id)
         } else {

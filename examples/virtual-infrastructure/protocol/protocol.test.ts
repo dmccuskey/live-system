@@ -5,13 +5,14 @@ import {
     MAX_QUEUED_PER_USER,
     MAX_RUNNING_PER_USER,
     MAX_SERVERS,
-    MIN_SCALE_DOWN_UTILIZATION,
     MIN_SERVERS,
-    SCALE_DOWN_GAP,
-    SCALE_DOWN_WINDOW,
-    SCALE_UP_WINDOW,
+    SCALE_DOWN_MARGIN,
+    SCALE_DOWN_WAIT,
+    SCALE_UP_MARGIN,
+    SCALE_UP_WAIT,
     SCALING_SAMPLE_INTERVAL,
     SERVER_CAPACITY,
+    UTILIZATION_WINDOW,
 } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import { SERVER_ROUTES } from '@virtual-infrastructure/protocol/servers/servers.routes'
 import { DATA_SERVICE_PORT, LIVE_SERVER_PORT, SERVICES } from '@virtual-infrastructure/protocol/services'
@@ -127,14 +128,16 @@ test('a status record is keyed by the manager that provides its data', () => {
     const status: StatusRecord = { id: 'x1', ...INITIAL_STATUS.servers }
 
     expect(STATUS_KEYS).toEqual({ servers: 'servers' })
-    expect(status).toEqual({ id: 'x1', key: 'servers', queueLength: 0, utilization: 0 })
+    expect(status).toEqual({ id: 'x1', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0 })
 })
 
-test('scaling down waits longer than scaling up, and its mark is below every maximum', () => {
-    expect(SCALE_UP_WINDOW).toBeLessThan(SCALE_DOWN_WINDOW)
-    expect(SCALING_SAMPLE_INTERVAL).toBeLessThan(SCALE_UP_WINDOW)
-    expect(MIN_SCALE_DOWN_UTILIZATION).toBeLessThan(MIN_MAX_UTILIZATION)
-    expect(SCALE_DOWN_GAP).toBeGreaterThan(0)
+test('scaling down waits longer than scaling up, and its margin is below every maximum', () => {
+    expect(SCALE_UP_WAIT).toBeLessThan(SCALE_DOWN_WAIT)
+    expect(SCALING_SAMPLE_INTERVAL).toBeLessThan(SCALE_UP_WAIT)
+    expect(SCALING_SAMPLE_INTERVAL).toBeLessThan(UTILIZATION_WINDOW)
+    expect(SCALE_UP_MARGIN).toBeGreaterThan(0)
+    expect(SCALE_DOWN_MARGIN).toBeGreaterThan(0)
+    expect(SCALE_DOWN_MARGIN).toBeLessThan(MIN_MAX_UTILIZATION)
     expect(MIN_SERVERS).toBeGreaterThanOrEqual(1)
     expect(MIN_SERVERS).toBeLessThan(MAX_SERVERS)
 })

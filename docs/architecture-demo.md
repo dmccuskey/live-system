@@ -127,27 +127,24 @@ If utilization remains sufficiently below the threshold, the manager may remove 
 
 Scale-up and scale-down thresholds should use hysteresis so that the system does not rapidly oscillate between adding and removing servers.
 
-For example:
-
-```text
-Scale up:   > 75%
-Scale down: < 35%
-```
-
 The exact values are configuration rather than architectural requirements.
 
-The Demo User sets one value, the maximum utilization, from 30% to 95%. The lower mark follows it at a fixed gap of 40 points, and is never below 10%.
+The Demo User sets one value, the maximum utilization, from 30% to 95%.
 
-The manager samples the utilization once a second: the load over the capacity of the servers that take commands. "Sustained" is every sample of a window:
+The manager samples the servers once a second, in either mode: the load and the capacity of the servers that take commands, and the cost of the commands that wait for room. The load and what waits are the demand. The **utilization** is the average demand of the last 10 seconds over the capacity there is now, and never more than 100%. So a server added or removed shows in it at once, and a change of the load gradually. With no server that takes commands it is 100%.
 
-| Decision | When | Window |
+This one value is what the page shows and what automatic scaling goes by. Scaling keeps it in a band around the maximum, from 15 points below to 5 points above:
+
+| Decision | When | Wait after a decision |
 |---|---|---|
-| Add a server | every sample is above the maximum utilization, or commands wait for room | 5 s |
-| Remove a server | every sample is below the lower mark, and no command waits for room | 15 s |
+| Add a server | the utilization is above the band | 5 s |
+| Remove a server | the utilization is below the band, and no command waits for room | 15 s |
 
-Commands that wait for room count as above the maximum whatever the load, because utilization stops at 100% and the queue is what shows demand beyond it. A command that waits for its own user's running commands is not counted: a further server would not start it.
+The band is narrow on purpose: the demo is to move, with servers coming and going as the load does, rather than settle. With a maximum of 70% the band is 55% to 75%. With few servers a removal can push the utilization above the band and bring on an addition, at most one round every 20 s or so; the waits keep that from going faster.
 
-Each decision begins both windows anew, so the next one needs a full window. Automatic scaling keeps from 1 to 8 servers.
+Commands that wait for room are demand, because the load stops at the capacity and the queue is what shows demand beyond it. The decision goes by the demand beyond the capacity too, though the utilization shown stops at 100%, so that a maximum of 95% still adds servers. A command that waits for its own user's running commands is not counted: a further server would not start it.
+
+A change to automatic mode counts as a decision: the first one waits its time. Automatic scaling keeps from 1 to 8 servers. Manual mode has no such limit, so a change to automatic mode may find more: at the next sample those beyond 8 leave together, the least loaded first, each removed if idle and drained if not.
 
 Scaling down aborts nothing. An idle server is removed at once, the newest first. With none idle, the least loaded server is drained: it takes no new command, and is removed when its last one ends. Only one server leaves at a time. If more capacity is needed while a server drains, that server is taken back instead of a new one being added.
 
@@ -239,6 +236,7 @@ interface StatusRecord {
     id: string
     key: string
     queueLength: number
+    waitingForRoom: number
     utilization: number
 }
 ```
@@ -249,7 +247,7 @@ A server has one kind of capacity, counted in whole units, and a command costs a
 
 A settings record belongs to one manager, and its `key` names that manager. There is one so far, with the key `servers`, for the `ServerManager`: the scaling mode and the maximum utilization, a fraction. A manager that gains settings gets a record of its own.
 
-A status record holds what one manager reports of itself, and its `key` names that manager, the one that provides the data. There is one so far, with the key `servers`, for the `ServerManager`: the number of commands that wait in the queue, and the system utilization, which is the load of all servers over their capacity, a fraction from 0 to 1. A manager that gains a status gets a record of its own.
+A status record holds what one manager reports of itself, and its `key` names that manager, the one that provides the data. There is one so far, with the key `servers`, for the `ServerManager`: the number of commands that wait in the queue, how many of them wait for room on a server (the others wait for their own user, who has as many running as a user may), and the system utilization, which is the 10-second average that automatic scaling goes by ([Automatic](#automatic)), a fraction from 0 to 1 in whole percent. A manager that gains a status gets a record of its own.
 
 Both kinds of record are found by their `key`, never by their `id`: the ID is the data service's to give, as for every other record.
 
@@ -294,8 +292,8 @@ The two server routes are refused in automatic mode.
 | `commandRefused` | the `ServerManager` | the command will not be run, and why: `queue_full` when its user already has one waiting, `dropped` when it was waiting as its user was removed or the system stopped |
 | `commandFinished` | the `VirtualServer` | the command left its server: `completed` after its duration, or `aborted` because the server was removed or the system stopped |
 | `userRemoved` | the `UserManager` | a user is gone, so whatever of its waits can be dropped |
-| `servers.queueChanged` | the `ServerManager` | the number of commands that wait has changed |
-| `servers.utilizationChanged` | the `ServerManager` | the utilization of the servers as a whole has changed |
+| `servers.queueChanged` | the `ServerManager` | the number of commands that wait has changed, or how many of them wait for room |
+| `servers.utilizationChanged` | the `ServerManager` | the average utilization of the servers as a whole has changed |
 
 An event that reports a manager's own status is named after the manager, as the last two are, so that another manager's status can be told apart from it.
 
@@ -318,7 +316,7 @@ The stores are reached through the context, which holds the Pinia instance besid
 
 **Status goes the other way.** The `ServerManager` produces the queue's length and the utilization, yet it does not write the status record. It announces the queue's length as `servers.queueChanged` events and the utilization as `servers.utilizationChanged` events, which the `StatusManager` writes to the status record with the key `servers`, changes close together as one write.
 
-The utilization in the status record covers every server, a draining one too. The utilization that automatic scaling samples leaves a draining server out, because its capacity is on its way out.
+The utilization is announced after each sample, when it has changed. It leaves a draining server out, because its capacity is on its way out.
 
 The order the managers are added in does not matter, because each phase has its work. A manager loads its records into its store in `init()`, begins to listen and to watch in `start()`, and acts in `run()`. The `ServerManager` begins to watch the settings store in its `start()`, when every store is loaded, and the virtual users send their first commands in their `run()`.
 
@@ -428,9 +426,9 @@ The page is mounted at once and renders from three things ([Starting a Web App](
 |---|---|
 | System status | a loading line while starting, the reason when the startup failed, the panels when running |
 | Connection status | a warning above the panels while the data service is not connected |
-| Records | the panels: a card per user and per server, the mode and the maximum utilization from the settings record, the utilization and the number of waiting commands from the status record |
+| Records | the panels: a card per user and per server, the mode and the maximum utilization from the settings record, the utilization and the command queue from the status record, as the commands that wait for their own user and those that wait for capacity |
 
-The utilization jumps with every command that starts or ends, so the page shows its average: it reads the status record once a second and averages the last 15 readings. This is the page's own smoothing. The record holds the utilization as it is, and automatic scaling does not use the average ([Automatic](#automatic)).
+The utilization jumps with every command that starts or ends, so the status record holds its average over 10 seconds, which the live server keeps and automatic scaling goes by ([Automatic](#automatic)). The page shows it as it is: every browser sees the same value. In automatic mode it is shown in red while it is above the maximum utilization.
 
 A user's frustration bar is green below 25%, yellow below 50%, orange below 75% and red from there on.
 

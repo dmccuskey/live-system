@@ -232,7 +232,7 @@ describe('settings and scaling', () => {
         const id = expect.stringMatching(/^[0-9a-f-]{36}$/)
 
         expect(await settings.find()).toEqual([{ id, key: 'servers', scalingMode: 'automatic', maxUtilization: 0.75 }])
-        expect(await status.find()).toEqual([{ id, key: STATUS_KEYS.servers, queueLength: 0, utilization: 0 }])
+        expect(await status.find()).toEqual([{ id, key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 }])
     })
 
     test('a second start keeps the settings', async () => {
@@ -277,7 +277,7 @@ describe('settings and scaling', () => {
         servers.onRemoved(record => removed.push(record.name))
         const { liveServer } = await startLiveServer(url)
 
-        for (const userId of ['u1', 'u2']) {
+        for (const userId of ['u1', 'u2', 'u3']) {
             liveServer.events.emit('commandRequested', { commandId: `c-${userId}`, userId, type: 'agentic' })
         }
 
@@ -298,10 +298,12 @@ describe('settings and scaling', () => {
 
         liveServer.events.emit('commandRequested', { commandId: 'c1', userId: 'someone', type: 'agentic' })
 
+        // The average follows the command gradually, in whole percent, up to its load and back
         await until(() => seen.includes(0.4))
         await until(() => seen.at(-1) === 0)
 
-        expect(seen).toEqual([0.4, 0])
+        expect(Math.max(...seen)).toBe(0.4)
+        expect(seen.length).toBeGreaterThan(2)
     })
 
     test('the status record follows the queue', async () => {

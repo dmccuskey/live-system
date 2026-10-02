@@ -29,7 +29,7 @@ const boot = async (records: StatusRecord[] = []) => {
 
     systems.push(booted.system)
 
-    const queue = (length: number) => booted.context.events.emit('servers.queueChanged', { length })
+    const queue = (length: number) => booted.context.events.emit('servers.queueChanged', { length, waitingForRoom: length })
     const utilization = (value: number) => booted.context.events.emit('servers.utilizationChanged', { utilization: value })
 
     return { ...booted, source, queue, utilization }
@@ -44,17 +44,17 @@ describe('the start', () => {
     test('with no status record, one is created with nothing waiting', async () => {
         const { source } = await boot()
 
-        expect(await source.find()).toEqual([{ id: expect.any(String), key: STATUS_KEYS.servers, queueLength: 0, utilization: 0 }])
+        expect(await source.find()).toEqual([{ id: expect.any(String), key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 }])
     })
 
     test('what the record says of an earlier run is cleared', async () => {
-        const { source } = await boot([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 4, utilization: 0.8 }])
+        const { source } = await boot([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 4, waitingForRoom: 0, utilization: 0.8 }])
 
-        expect(await source.find()).toEqual([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 0, utilization: 0 }])
+        expect(await source.find()).toEqual([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 }])
     })
 
     test('a record that is already clear is not written', async () => {
-        const { source } = await boot([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 0, utilization: 0 }])
+        const { source } = await boot([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 }])
 
         expect(source.patches).toEqual([])
     })
@@ -62,13 +62,13 @@ describe('the start', () => {
 
 describe('the records', () => {
     test('a status with another key is left alone, and the server manager\'s is created beside it', async () => {
-        const other = { id: 'x2', key: 'users', queueLength: 9, utilization: 0.9 }
+        const other = { id: 'x2', key: 'users', queueLength: 9, waitingForRoom: 0, utilization: 0.9 }
         const { source, queue } = await boot([other])
 
         queue(1)
         await until(() => source.patches.length > 0)
 
-        expect(await source.find()).toEqual([other, { id: expect.any(String), key: 'servers', queueLength: 1, utilization: 0 }])
+        expect(await source.find()).toEqual([other, { id: expect.any(String), key: 'servers', queueLength: 1, waitingForRoom: 1, utilization: 0 }])
     })
 })
 
@@ -79,16 +79,16 @@ describe('a servers.queueChanged event', () => {
         queue(3)
         await until(() => source.patches.length > 0)
 
-        expect(await source.find()).toMatchObject([{ key: STATUS_KEYS.servers, queueLength: 3, utilization: 0 }])
+        expect(await source.find()).toMatchObject([{ key: STATUS_KEYS.servers, queueLength: 3, waitingForRoom: 3, utilization: 0 }])
     })
 
     test('a record from an earlier run is written by the ID it has', async () => {
-        const { source, queue } = await boot([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 0, utilization: 0 }])
+        const { source, queue } = await boot([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 }])
 
         queue(2)
         await until(() => source.patches.length > 0)
 
-        expect(await source.find()).toEqual([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 2, utilization: 0 }])
+        expect(await source.find()).toEqual([{ id: 'x1', key: STATUS_KEYS.servers, queueLength: 2, waitingForRoom: 2, utilization: 0 }])
     })
 
     test('changes close together are written as one, the last', async () => {
@@ -99,7 +99,7 @@ describe('a servers.queueChanged event', () => {
         queue(1)
         await Bun.sleep(100 * TIME_SCALE * 5)
 
-        expect(source.patches).toEqual([{ queueLength: 1 }])
+        expect(source.patches).toEqual([{ queueLength: 1, waitingForRoom: 1 }])
     })
 })
 
@@ -110,7 +110,7 @@ describe('a servers.utilizationChanged event', () => {
         utilization(0.4)
         await until(() => source.patches.length > 0)
 
-        expect(await source.find()).toMatchObject([{ queueLength: 0, utilization: 0.4 }])
+        expect(await source.find()).toMatchObject([{ queueLength: 0, waitingForRoom: 0, utilization: 0.4 }])
     })
 
     test('a change of the queue close to it is the same write', async () => {
@@ -120,7 +120,7 @@ describe('a servers.utilizationChanged event', () => {
         queue(2)
         await Bun.sleep(100 * TIME_SCALE * 5)
 
-        expect(source.patches).toEqual([{ utilization: 1, queueLength: 2 }])
+        expect(source.patches).toEqual([{ utilization: 1, queueLength: 2, waitingForRoom: 2 }])
     })
 })
 
@@ -133,6 +133,6 @@ describe('stopping', () => {
         queue(5)
         await Bun.sleep(100 * TIME_SCALE * 3)
 
-        expect(source.patches).toEqual([{ queueLength: 2 }])
+        expect(source.patches).toEqual([{ queueLength: 2, waitingForRoom: 2 }])
     })
 })
