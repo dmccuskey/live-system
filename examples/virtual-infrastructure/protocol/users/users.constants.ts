@@ -1,8 +1,8 @@
 // The constants of the users domain.
 
 /** The fewest and the most commands a new user sends in a minute. */
-export const MIN_COMMANDS_PER_MINUTE = 4
-export const MAX_COMMANDS_PER_MINUTE = 20
+export const MIN_COMMANDS_PER_MINUTE = 10
+export const MAX_COMMANDS_PER_MINUTE = 25
 
 /**
  * How a user's frustration, a fraction from 0 to 1, moves with what becomes
