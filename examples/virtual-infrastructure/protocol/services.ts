@@ -11,3 +11,6 @@ export const DATA_SERVICE_PORT = 3030
 
 /** The port the live server takes commands on, unless it is started with another. */
 export const LIVE_SERVER_PORT = 3031
+
+/** The port the web app's dev server listens on, unless it is started with another. */
+export const WEB_PORT = 3032

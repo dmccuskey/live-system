@@ -1,0 +1,2 @@
+[test]
+preload = ["./examples/virtual-infrastructure/web/test-support/preload.ts"]

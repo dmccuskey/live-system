@@ -33,9 +33,11 @@ live-system/
 │       ├── protocol/             # records, routes and commands, by domain
 │       ├── data-service/         # Feathers with SQLite
 │       ├── live-server/          # managers and live objects
-│       └── web/                  # the web app
+│       └── web/                  # the web app, in Vue 3
 ├── node_modules/                 # installed by `bun install` (gitignored)
+├── .prettierrc                   # the code style, for Prettier
 ├── bun.lock
+├── bunfig.toml                   # preloads what `bun test` needs for `.vue` files
 ├── package.json                  # the Bun workspace
 ├── tsconfig.json                 # TypeScript configuration shared by the packages
 ├── LICENSE

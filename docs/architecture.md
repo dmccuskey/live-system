@@ -927,7 +927,7 @@ Decisions: [ADR 006](decisions/006-record-source-boundary.md), [ADR 015](decisio
 
 ## Demo Application
 
-The LiveSystem repository will contain a self-contained demonstration application, a **Virtual Infrastructure Simulator**: virtual users generate commands, virtual servers with finite capacity process them, and a manager adds or removes servers as load changes.
+The LiveSystem repository contains a self-contained demonstration application, a **Virtual Infrastructure Simulator**: virtual users generate commands, virtual servers with finite capacity process them, and a manager adds or removes servers as load changes.
 
 The examples in this document take their names from it (`VirtualServer`, `UserManager`, `ServerManager`). Its design is in [Demo Architecture](architecture-demo.md).
 
