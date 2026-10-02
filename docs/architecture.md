@@ -744,7 +744,21 @@ POST /command
 
 The response body is always the `CommandResponse`. The HTTP status is 200 when the command was accepted, 400 for a body that is not a command, 404 for an unknown route, 405 for anything but POST, and 500 for any other failure. `handle(request)` works on the standard `Request` and `Response`, so the same server can be mounted in another HTTP server; `listen()` uses Bun's.
 
-Decision: [ADR 009](decisions/009-commands-events-crud.md).
+### The CommandClient
+
+The `CommandClient` is the other end, in a web app. It posts a command to the `CommandServer` and returns its response:
+
+```ts
+const commands = new CommandClient({ url: 'http://localhost:3040/command' })
+
+const response = await commands.send(restartServer('42', { force: false }))
+```
+
+`send` resolves with the response when the command was accepted (`{ status: 'accepted', result? }`) and rejects with a `CommandError` when it was not. Every failure is a `CommandError`, so a component catches one type and decides what to show. The server's errors keep their names, messages and codes. The client adds two codes for the transport: `unreachable` when the request got no answer (the cause is kept in `cause`), and `bad_response` when the answer was not a `CommandResponse`. Nothing is retried.
+
+The client builds no commands. Those come from the application's command creators, in its protocol (see [Protocols](#protocols)).
+
+Decisions: [ADR 009](decisions/009-commands-events-crud.md), [ADR 013](decisions/013-server-web-symmetry.md).
 
 ## Events
 
@@ -932,7 +946,7 @@ live-system/
 |---|---|
 | `core` | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the record store, the optional event bus |
 | `server` | the router and the `CommandServer`, which turns an HTTP request into a command |
-| `web` | the `CommandClient` and the web startup |
+| `web` | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status |
 
 `micro-fsm` and `feathers-connect` start in this workspace and are built to move to repositories of their own.
 
@@ -975,6 +989,38 @@ The two sides are symmetric where possible. Both use the same `BaseManager` and 
 
 - The server owns the live objects and is the only writer of records.
 - A web app is a display of what happens on the server. It has managers and no live objects, never writes records, and changes things only by sending commands.
+
+### Starting a Web App
+
+A web app's system is a `LiveSystem` without a router. Booting it connects to the data service, then has each data manager load its records into the store.
+
+The app does not wait for that to be shown. It is mounted at once and renders from what it knows, which is three separate things:
+
+| What | Says | Comes from |
+|---|---|---|
+| System status | `created`, `starting`, `running`, `failed` (with the error) or `stopped` | `WebStartup`, in `live-system/web` |
+| Connection status | whether the data service is connected, after startup as well | the application, from its connection |
+| Record state | what a record's own fields say, such as a server that is starting | the application's records, in the store |
+
+`WebStartup` boots the system and keeps the system status as reactive state:
+
+```ts
+const startup = new WebStartup(system)
+
+app.provide('status', startup.status)
+app.mount('#app')
+startup.start()
+```
+
+```html
+<LoadingScreen v-if="status.phase === 'starting'" />
+<StartupFailed v-else-if="status.phase === 'failed'" :error="status.error" />
+<MainPanel v-else />
+```
+
+`start()` does not reject when the boot fails: the failure is in `status`, where the UI reads it. `stop()` shuts the system down.
+
+The connection status is not part of LiveSystem, which opens no connection. The application keeps it, for example in a `ref` set from its connection's `onConnected` and `onDisconnected`, and shows a warning while it is false. A connection that comes back does not yet bring the changes missed meanwhile ([ADR 008](decisions/008-startup-sync.md)).
 
 Decision: [ADR 013](decisions/013-server-web-symmetry.md).
 
