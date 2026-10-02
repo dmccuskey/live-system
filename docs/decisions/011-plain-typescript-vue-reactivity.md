@@ -14,7 +14,7 @@ Vue 3 separates its reactivity (`reactive`, `ref`, `computed`, `watch`) from its
 - Vue 3's reactivity is used as a library, inside objects and in the store, where reactive state helps.
 - On the server, reactivity communicates data changes: a manager or a live object watches reactive state and acts when it changes. There are no components and nothing is rendered.
 - In a web app, Vue is used in the standard way: the same reactive state also drives components.
-- The store is a mirror of the data service on both sides ([ADR 007](007-data-service-source-of-truth.md)). Which store an application uses is its own choice.
+- The store is a mirror of the data service on both sides ([ADR 007](007-data-service-source-of-truth.md)). The store is [Pinia](https://pinia.vuejs.org), with one store per kind of record, defined by `core`'s `defineRecordStore`. Pinia needs no Vue app, so the server uses it as the web does. The data service behind the record sources stays the application's choice ([ADR 006](006-record-source-boundary.md)); the store does not, because a store that could be anything would have to be hidden behind one more interface with nothing gained.
 
 Rejected:
 
@@ -26,5 +26,6 @@ Rejected:
 
 - Managers and live objects are plain classes that can be constructed and tested without a framework.
 - Server and web share the same reactive model, which supports their symmetry ([ADR 013](013-server-web-symmetry.md)).
-- The server depends on Vue's reactivity package, though not on Vue's components.
+- The server depends on Vue's reactivity and on Pinia, though not on Vue's components.
+- A record in the store is replaced whole when it changes, never changed in place. The store tracks which records it holds, not what is inside them.
 - A watcher is a subscription like any other and must be stopped by whatever started it ([ADR 006](006-record-source-boundary.md)).

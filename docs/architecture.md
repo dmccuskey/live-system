@@ -44,9 +44,9 @@ Records represent persistent or transportable data. They are not necessarily the
 
 ### Technology Stays at the Edges
 
-LiveSystem should not require a particular database, transport, UI framework, or persistence technology.
+LiveSystem should not require a particular database, transport, or persistence technology.
 
-For example, Feathers can be used as a record source implementation, while Vue can provide reactive presentation state, but neither should define the architecture.
+For example, Feathers can be used as a record source implementation, but it should not define the architecture. The one technology LiveSystem does fix is the local store: Vue's reactivity and Pinia, used as libraries with no UI (see [Reactive State](#reactive-state)).
 
 Decisions: [ADR 001](decisions/001-long-lived-managed-objects.md), [ADR 011](decisions/011-plain-typescript-vue-reactivity.md).
 
@@ -107,14 +107,14 @@ An application creates one instance of `LiveSystem`, adds its managers, and boot
 
 ```ts
 const system = new LiveSystem<AppContext>({
-    context: { events, store },
+    context: { events, pinia },
     router,
     connect: () => connection.open(),
     disconnect: () => connection.close()
 })
 
-system.addManager(context => new UserManager(context, userSource))
-system.addManager(context => new ServerManager(context, serverSource))
+system.addManager(context => new UserManager(context, userSource, useUsers(context.pinia)))
+system.addManager(context => new ServerManager(context, serverSource, useServers(context.pinia)))
 
 await system.boot()
 ```
@@ -333,9 +333,12 @@ A basic hierarchy might be:
 BaseManager
     │
     ├── DataManager<T>
-    │       ├── UserManager
-    │       ├── ServerManager
-    │       └── ...
+    │       ├── a manager that mirrors records
+    │       │
+    │       └── LiveObjectManager<T, O>
+    │               ├── UserManager
+    │               ├── ServerManager
+    │               └── ...
     │
     └── SpecializedManager
 ```
@@ -359,23 +362,23 @@ abstract class BaseManager<C = unknown> {
 }
 ```
 
-A manager receives as little as possible. The context holds only what every manager shares. Its type is the application's own, since the store and the events are the application's choice:
+A manager receives as little as possible. The context holds only what every manager shares. Its type is the application's own, since the events are the application's choice:
 
 ```ts
 interface AppContext {
     events: EventBus<AppEvents>
-    store: Store
+    pinia: Pinia
 }
 ```
 
 The application's managers extend `BaseManager<AppContext>`, and the system is a `LiveSystem<AppContext>`.
 
-The event bus is passed in rather than reached for globally, so a test can give a manager its own. The store is the application's local reactive state.
+The event bus is passed in rather than reached for globally, so a test can give a manager its own. The Pinia instance holds the application's local reactive state, one store per kind of record.
 
 The router is not in the context. A manager declares the commands it handles, and the system registers them when the manager is added:
 
 ```ts
-class ServerManager extends DataManager<VirtualServerRecord> {
+class ServerManager extends LiveObjectManager<VirtualServerRecord, VirtualServer, AppContext> {
     routes() {
         return {
             'server/:id/restart': this.restart
@@ -405,20 +408,29 @@ restart(params: RouteParams, data: { force: boolean }) {
 
 The router lives in `live-system/server`, and `core` knows it only as a `RouteRegistry`, an interface with `register()` and `removeManager()`.
 
-A manager that works with records also receives the record source for its one kind of record:
+A manager that works with records also receives the record source for its one kind of record, and the store it mirrors them into:
 
 ```ts
-abstract class DataManager<T, C = unknown> extends BaseManager<C> {
+abstract class DataManager<T extends { id: string }, C = unknown> extends BaseManager<C> {
     constructor(
         context: C,
-        protected readonly source: RecordSource<T>
+        protected readonly source: RecordSource<T>,
+        protected readonly records: RecordStore<T>
     ) {
         super(context)
     }
+
+    protected recordAdded(record: T): void {}
+    protected recordChanged(record: T, previous: T): void {}
+    protected recordRemoved(record: T): void {}
 }
 ```
 
-Managers should not assume that the application uses Feathers, Vue, SQLite, HTTP, or any other particular technology.
+A `DataManager` loads its records during `init()` and keeps the store current from the record source's change events. The three hooks tell a subclass what happened, each after the store has changed. To change a record, a manager calls its record source (`this.source.patch(id, data)`); the store changes when the event comes back.
+
+A manager whose records each have a live object extends `LiveObjectManager<T, O>`, which is a `DataManager<T>` that also creates, starts and destroys the objects (see [Object Ownership](#object-ownership)). A web app's managers only mirror records, so they extend `DataManager<T>`.
+
+Managers should not assume that the application uses Feathers, SQLite, HTTP, or any other particular technology for its data or transport.
 
 Decision: [ADR 005](decisions/005-manager-capabilities.md).
 
@@ -458,7 +470,7 @@ interface VirtualServerRecord {
 }
 ```
 
-The corresponding live object reads and writes that record, and additionally holds what cannot be stored:
+The corresponding live object reads that record from the store by its ID, without keeping a copy, and writes it through the record source. It additionally holds what cannot be stored:
 
 ```text
 timers
@@ -489,21 +501,28 @@ Object ownership follows a simple rule:
 
 > **The Manager owns the existence of objects. The Object owns its own behavior.**
 
-For example:
+`LiveObjectManager` does the owning. It keeps the objects by their record's ID, creates one when a record appears, and destroys it when the record is removed or the manager stops. The domain manager says only how an object is made:
 
 ```ts
-private createObject(record: VirtualServerRecord) {
-    const object = new VirtualServer({
-        record,
+class ServerManager extends LiveObjectManager<VirtualServerRecord, VirtualServer, AppContext> {
+    protected createObject(record: VirtualServerRecord, options: LiveObjectOptions) {
+        return new VirtualServer(record.id, this.records, this.source, options)
+    }
 
-        onDestroyed: () => {
-            this.deleteObject(record.id)
-        }
-    })
-
-    this.objects.set(record.id, object)
+    restart(params: RouteParams) {
+        return this.getObject(params.id)?.restart()
+    }
 }
 ```
+
+`createObject` only constructs. The `options` carry the `onDestroyed` callback through which the manager hears of the object's end, and the object passes them to `LiveObject`.
+
+An object starts in step with its manager. `LiveObject` has `init()`, `start()` and `run()`, which do nothing unless overridden:
+
+- **During startup**, the records are loaded in the manager's `init()`, an object is created for each, and each object's `init()` is awaited. The manager's `start()` awaits each object's `start()`, and its `run()` each object's `run()`. So every object of every manager is initialized before any is started, and no object acts on its own before the system is running.
+- **While the system runs**, the object for a new record is taken through `init()`, `start()` and `run()`, one after the other.
+
+An object whose step fails is destroyed and reported to the manager's `objectFailed(object, error)`, which logs by default. The other objects are not affected.
 
 The object performs its own cleanup. `LiveObject`, the base class, provides `destroy()`: it does nothing the second time it is called, calls the object's `release()`, and then tells the owner through `onDestroyed`. The object says what there is to release:
 
@@ -532,11 +551,11 @@ LiveSystem separates application behavior from persistence and transport.
 A record source provides access to one kind of record. It is not the whole data store or the connection to it: with Feathers, a record source wraps a single service, and every record source shares the one connection.
 
 ```ts
-interface RecordSource<T> {
+interface RecordSource<T extends { id: string }> {
     find(): Promise<T[]>
     get(id: string): Promise<T>
 
-    create(data: T): Promise<T>
+    create(data: Omit<T, 'id'> & { id?: string }): Promise<T>
     update(id: string, data: T): Promise<T>
     patch(id: string, data: Partial<T>): Promise<T>
     remove(id: string): Promise<T>
@@ -548,6 +567,8 @@ interface RecordSource<T> {
 }
 ```
 
+A record has a string `id`. A record to create may leave it out, and the source then assigns one, as Feathers does.
+
 The implementation can vary:
 
 ```text
@@ -558,6 +579,8 @@ RecordSource
     ├── FeathersRecordSource
     └── ...
 ```
+
+`core` provides `MemoryRecordSource`, which keeps its records in memory and emits the same change events, for testing a manager without a data service.
 
 This allows the application architecture to remain independent of its storage technology.
 
@@ -599,6 +622,21 @@ These functions need no UI. They are used on both sides of an application, for d
 On the server, reactivity communicates data changes: a manager or a live object watches reactive state and acts when it changes. There are no components and nothing is rendered.
 
 In a web application, Vue is used in the standard way: the same reactive state also drives components, which render the UI.
+
+The store is [Pinia](https://pinia.vuejs.org), on the server as on the web: Pinia needs no Vue app. Each kind of record has a store of its own, defined in one line:
+
+```ts
+const useServers = defineRecordStore<VirtualServerRecord>('servers')
+
+const servers = useServers(pinia)
+
+servers.records         // every record, by ID
+servers.get('42')       // one record, or undefined
+```
+
+Only the `DataManager` for those records writes to the store. Everything else reads, and what reads inside a `computed` or a `watch` reacts when the record is replaced. A record is replaced whole when it changes, never changed in place.
+
+An object whose record changes faster than is worth writing can collect its updates with `debouncePatch`, which merges them and writes once after a quiet delay. It is opt-in: by default an update is written as it happens.
 
 When Feathers is used, a useful model is:
 
@@ -890,7 +928,7 @@ live-system/
 
 | Entry point | Holds |
 |---|---|
-| `core` | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `RecordSource`, the optional event bus |
+| `core` | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the record store, the optional event bus |
 | `server` | the router and the `CommandServer`, which turns an HTTP request into a command |
 | `web` | the `CommandClient` and the web startup |
 

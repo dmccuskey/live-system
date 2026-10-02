@@ -12,7 +12,7 @@ There is also more than one writer. Besides the live server, a record editor may
 
 Every LiveSystem application has a data service that emits an event for each change: a record created, updated, patched or removed. It is the one source of truth for the server and for every web app.
 
-- **Local state is a projection.** The store on the server and on the web mirrors what is in the data service. Which store an application uses is its own choice. Managers and live objects may hold a reference to it and react to its changes.
+- **Local state is a projection.** The store on the server and on the web mirrors what is in the data service. The store is [Pinia](https://pinia.vuejs.org), on both sides ([ADR 011](011-plain-typescript-vue-reactivity.md)). Managers and live objects may hold a reference to it and react to its changes.
 - **Changes go to the data service first.** Code asks the service to change a record and applies the change locally only when the service's change event comes back. The server never changes a live object before the data service.
 - **Only the server writes records.** A web app never writes: it requests a change with a command ([ADR 009](009-commands-events-crud.md)). The one exception is a record editor used in development; the system reacts to its edits like any other change event.
 - **Storage is SQLite**, behind the data service.

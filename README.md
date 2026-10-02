@@ -15,7 +15,7 @@ router.handle({
 
 ## Status
 
-LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes, and commands: the `Router` and the `CommandServer` ([Development](docs/development.md)). Data and the demo are not built, so there is nothing to run yet, and nothing is a published API. The design is in [docs/architecture.md](docs/architecture.md).
+LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes, commands (the `Router` and the `CommandServer`), and data: `RecordSource`, the record store, `DataManager` and `LiveObjectManager` ([Development](docs/development.md)). The Feathers connection, the web side and the demo are not built, so there is nothing to run yet, and nothing is a published API. The design is in [docs/architecture.md](docs/architecture.md).
 
 ## Primitives
 
@@ -30,7 +30,7 @@ LiveSystem is intentionally small. It provides a few primitives that compose:
 - **Reactive state:** a view of the data for presentation, kept apart from the architecture.
 - **Cleanup:** every subscription returns an unsubscribe function, so shutdown releases what startup acquired.
 
-Technology stays at the edges: LiveSystem does not require a particular database, transport, or UI framework.
+Technology stays at the edges: LiveSystem does not require a particular database or transport. Its local state is held in [Pinia](https://pinia.vuejs.org) stores, on the server as on the web, with no UI needed.
 
 ## The Demo
 
