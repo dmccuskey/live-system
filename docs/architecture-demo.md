@@ -87,15 +87,15 @@ This makes the simulator a concrete demonstration of LiveSystem's object model.
 
 Servers provide finite resources.
 
-A server might expose:
+A server exposes:
 
 ```text
-CPU capacity
-Memory capacity
-Storage capacity
-Current utilization
+Capacity, in whole units
+Current load
 Active commands
 ```
+
+There is one kind of capacity, not CPU, memory and storage apiece ([The Data Service](#the-data-service)).
 
 Commands are routed to available servers.
 
@@ -196,6 +196,38 @@ actual throughput
 Frustration is therefore an emergent property of the system rather than a manually controlled variable.
 
 This allows the demo to show that infrastructure health and user experience are related but not identical.
+
+## The Data Service
+
+The data service is a Feathers app in a process of its own, with a service per kind of record: `users` and `servers`. The live server and the web app both connect to it over Socket.IO, and it publishes every change to every client.
+
+It keeps the records in a SQLite file, one table per service, each record stored whole as JSON beside its ID. A record therefore gains a field without a change to the table. A record created without an `id` is given a UUID.
+
+The record types are in the demo's protocol:
+
+```ts
+interface UserRecord {
+    id: string
+    name: string
+    commandsPerMinute: number
+    commandMix: { search: number; standard: number; agentic: number }
+    frustration: number
+}
+
+interface ServerRecord {
+    id: string
+    name: string
+    capacity: number
+    load: number
+    activeCommands: number
+}
+```
+
+A user's command mix is three fractions that sum to 1, and its frustration runs from 0 to 1.
+
+A server has one kind of capacity, counted in whole units, and a command costs a whole number of them. For example, a server of 10 units running one search command that costs 4 has a load of 4. Whole numbers are easier to reconcile by eye than fractions of a server.
+
+The service does not validate what it is given: only the live server writes to it.
 
 ## Demo User Interface
 
