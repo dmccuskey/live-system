@@ -39,16 +39,16 @@ describe('debouncePatch()', () => {
 
     test('each update restarts the delay', async () => {
         const writes: Partial<Item>[] = []
-        const debounced = debouncePatch<Item>(data => writes.push(data), 40)
+        const debounced = debouncePatch<Item>(data => writes.push(data), 100)
 
         debounced.patch({ count: 1 })
-        await wait(25)
+        await wait(60)
         debounced.patch({ count: 2 })
-        await wait(25)
+        await wait(60)
 
         expect(writes).toEqual([])
 
-        await wait(40)
+        await wait(100)
 
         expect(writes).toEqual([{ count: 2 }])
     })

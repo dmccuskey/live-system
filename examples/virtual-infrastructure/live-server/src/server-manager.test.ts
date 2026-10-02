@@ -297,18 +297,20 @@ describe('the limits of one user', () => {
     })
 
     test('once its waiting command has started, the user may queue another', async () => {
-        const { context, request, queued, refused } = await boot([server('s1')])
+        const { context, request, started, queued, refused } = await boot([server('s1')])
         const finished = finishedEvents(context)
 
-        for (let count = 0; count < 4; count++) request('search')
-        await until(() => finished.length >= 1)
+        // The two agentic commands outlast the search by far, so the user has three running whenever the fifth comes
+        request('search')
         request('agentic')
         request('agentic')
-        request('agentic')
+        request('search')
+        await until(() => started.some(event => event.commandId === 'c4'))
+        request('search')
 
+        expect(queued.map(event => event.commandId)).toEqual(['c4', 'c5'])
         expect(refused).toEqual([])
-        await until(() => finished.length === 7, 5000)
-        expect(queued.length).toBeGreaterThanOrEqual(1)
+        await until(() => finished.length === 5, 5000)
     })
 
     test('a user that waits for itself does not hold up the others', async () => {
