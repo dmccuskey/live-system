@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
 import type { AddUserResult } from '@virtual-infrastructure/protocol/users/users.commands'
-import { USER_NAMES } from '@virtual-infrastructure/protocol/users/users.constants'
+import { FRUSTRATION_REFUSED, USER_NAMES } from '@virtual-infrastructure/protocol/users/users.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { defineRecordStore, MemoryRecordSource } from 'live-system/core'
 import type { LiveSystem } from 'live-system/core'
@@ -150,5 +150,22 @@ describe('the users at work', () => {
         await Bun.sleep(120)
 
         expect(sent).toHaveLength(count)
+    })
+})
+
+describe('frustration', () => {
+    test("what becomes of a user's commands reaches its record", async () => {
+        const { context, source } = await boot([{ ...user('u1', 'Alice'), commandsPerMinute: 0 }])
+
+        context.events.emit('commandRefused', { commandId: 'c1', userId: 'u1', type: 'search', reason: 'queue_full' })
+        await Bun.sleep(30)
+
+        expect((await source.get('u1')).frustration).toBeCloseTo(FRUSTRATION_REFUSED)
+    })
+
+    test('the frustration of an earlier run is cleared at startup', async () => {
+        const { source } = await boot([{ ...user('u1', 'Alice'), commandsPerMinute: 0, frustration: 0.7 }])
+
+        expect((await source.get('u1')).frustration).toBe(0)
     })
 })

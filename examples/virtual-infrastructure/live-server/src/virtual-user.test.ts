@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import type { CommandRequestedEvent } from '@virtual-infrastructure/protocol/events'
+import {
+    FRUSTRATION_ABORTED,
+    FRUSTRATION_PER_SECOND_QUEUED,
+    FRUSTRATION_REFUSED,
+    FRUSTRATION_RELIEF,
+} from '@virtual-infrastructure/protocol/users/users.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
-import { collect, createContext, until } from './test-support.ts'
+import { MemoryRecordSource } from 'live-system/core'
+import { collect, createContext, TIME_SCALE, until } from './test-support.ts'
 import { VirtualUser } from './virtual-user.ts'
 
 // 20 commands a minute is one every 3 s: 30 ms at the tests' time scale
@@ -12,17 +20,45 @@ const record: UserRecord = {
     frustration: 0,
 }
 
+/** A record source that keeps what it was asked to patch. */
+class RecordingSource extends MemoryRecordSource<UserRecord> {
+    patches: Partial<UserRecord>[] = []
+
+    override async patch(id: string, data: Partial<UserRecord>): Promise<UserRecord> {
+        this.patches.push(data)
+
+        return super.patch(id, data)
+    }
+}
+
 let users: VirtualUser[] = []
 
 const create = (overrides: Partial<UserRecord> = {}, random = () => 0.5) => {
     const context = createContext({ random })
+    const source = new RecordingSource([{ ...record, ...overrides }])
     const sent = collect(context.events, 'commandRequested')
-    const user = new VirtualUser({ ...record, ...overrides }, context)
+    const user = new VirtualUser({ ...record, ...overrides }, source, context)
 
     users.push(user)
 
-    return { user, sent, context }
+    return { user, sent, context, source }
 }
+
+// A user that listens but sends nothing of its own: the tests play the servers' part
+const listening = async (overrides: Partial<UserRecord> = {}) => {
+    const created = create({ commandsPerMinute: 0, ...overrides })
+
+    await created.user.init()
+    await created.user.start()
+
+    return created
+}
+
+const command = (commandId: string, type: CommandRequestedEvent['type'] = 'search', userId = 'u1'): CommandRequestedEvent => ({
+    commandId,
+    userId,
+    type,
+})
 
 afterEach(() => {
     for (const user of users) user.destroy()
@@ -118,5 +154,172 @@ describe('destroying a user', () => {
         await Bun.sleep(80)
 
         expect(sent).toEqual([])
+    })
+})
+
+describe('frustration', () => {
+    test('a refusal for a full queue adds its bump', async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandRefused', { ...command('c1'), reason: 'queue_full' })
+        context.events.emit('commandRefused', { ...command('c2'), reason: 'queue_full' })
+
+        expect(user.frustration).toBeCloseTo(2 * FRUSTRATION_REFUSED)
+    })
+
+    test('a dropped command counts as nothing, and neither does its wait', async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandQueued', command('c1'))
+        await Bun.sleep(30)
+        context.events.emit('commandRefused', { ...command('c1'), reason: 'dropped' })
+
+        expect(user.frustration).toBe(0)
+    })
+
+    test('a command taken at once adds nothing', async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandStarted', { ...command('c1'), serverId: 's1' })
+
+        expect(user.frustration).toBe(0)
+    })
+
+    test('a wait in the queue adds more the longer it was, in simulated time', async () => {
+        const { user, context } = await listening()
+
+        // 50 ms at the tests' time scale is 5 simulated seconds
+        context.events.emit('commandQueued', command('c1'))
+        await Bun.sleep(50)
+        context.events.emit('commandStarted', { ...command('c1'), serverId: 's1' })
+
+        const short = user.frustration
+
+        expect(short).toBeGreaterThanOrEqual(5 * FRUSTRATION_PER_SECOND_QUEUED * 0.9)
+        expect(short).toBeLessThan(15 * FRUSTRATION_PER_SECOND_QUEUED)
+
+        context.events.emit('commandQueued', command('c2'))
+        await Bun.sleep(150)
+        context.events.emit('commandStarted', { ...command('c2'), serverId: 's1' })
+
+        expect(user.frustration - short).toBeGreaterThan(short)
+    })
+
+    test('nothing is added while a command still waits', async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandQueued', command('c1'))
+        await Bun.sleep(30)
+
+        expect(user.frustration).toBe(0)
+    })
+
+    test('an abort just after the start weighs about as much as a refusal', async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandStarted', { ...command('c1', 'agentic'), serverId: 's1' })
+        context.events.emit('commandFinished', { ...command('c1', 'agentic'), serverId: 's1', outcome: 'aborted' })
+
+        expect(user.frustration).toBeGreaterThanOrEqual(FRUSTRATION_REFUSED)
+        expect(user.frustration).toBeLessThan(FRUSTRATION_REFUSED + FRUSTRATION_ABORTED * 0.2)
+    })
+
+    test('an abort weighs more the longer the command had run', async () => {
+        const { user, context } = await listening()
+
+        // A standard command runs for 5 s, 50 ms at the tests' time scale: aborted when it was all but done
+        context.events.emit('commandStarted', { ...command('c1', 'standard'), serverId: 's1' })
+        await Bun.sleep(5000 * TIME_SCALE)
+        context.events.emit('commandFinished', { ...command('c1', 'standard'), serverId: 's1', outcome: 'aborted' })
+
+        expect(user.frustration).toBeGreaterThan(FRUSTRATION_REFUSED + FRUSTRATION_ABORTED * 0.8)
+        expect(user.frustration).toBeLessThanOrEqual(FRUSTRATION_REFUSED + FRUSTRATION_ABORTED + 1e-9)
+    })
+
+    test('a completed command relieves it', async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandRefused', { ...command('c1'), reason: 'queue_full' })
+        context.events.emit('commandStarted', { ...command('c2'), serverId: 's1' })
+        context.events.emit('commandFinished', { ...command('c2'), serverId: 's1', outcome: 'completed' })
+
+        expect(user.frustration).toBeCloseTo(FRUSTRATION_REFUSED * FRUSTRATION_RELIEF)
+    })
+
+    test('time alone does not reduce it', async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandRefused', { ...command('c1'), reason: 'queue_full' })
+        await Bun.sleep(100)
+
+        expect(user.frustration).toBeCloseTo(FRUSTRATION_REFUSED)
+    })
+
+    test('it never exceeds 1', async () => {
+        const { user, context } = await listening()
+
+        for (let number = 0; number < 30; number++) {
+            context.events.emit('commandRefused', { ...command(`c${number}`), reason: 'queue_full' })
+        }
+
+        expect(user.frustration).toBe(1)
+    })
+
+    test("another user's commands do not count", async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandRefused', { ...command('c1', 'search', 'u2'), reason: 'queue_full' })
+        context.events.emit('commandFinished', { ...command('c2', 'search', 'u2'), serverId: 's1', outcome: 'aborted' })
+
+        expect(user.frustration).toBe(0)
+    })
+
+    test('nothing counts before start()', async () => {
+        const { user, context } = create({ commandsPerMinute: 0 })
+
+        await user.init()
+        context.events.emit('commandRefused', { ...command('c1'), reason: 'queue_full' })
+
+        expect(user.frustration).toBe(0)
+    })
+
+    test('it is written to the record, several changes as one', async () => {
+        const { context, source } = await listening()
+
+        context.events.emit('commandRefused', { ...command('c1'), reason: 'queue_full' })
+        context.events.emit('commandRefused', { ...command('c2'), reason: 'queue_full' })
+        await until(() => source.patches.length > 0)
+
+        expect(source.patches).toHaveLength(1)
+        expect(source.patches[0]?.frustration).toBeCloseTo(2 * FRUSTRATION_REFUSED)
+    })
+
+    test('init() clears the frustration of an earlier run', async () => {
+        const { user, source } = create({ commandsPerMinute: 0, frustration: 0.6 })
+
+        await user.init()
+
+        expect(user.frustration).toBe(0)
+        expect(source.patches).toEqual([{ frustration: 0 }])
+    })
+
+    test('init() writes nothing when there is nothing to clear', async () => {
+        const { user, source } = create({ commandsPerMinute: 0 })
+
+        await user.init()
+
+        expect(source.patches).toEqual([])
+    })
+
+    test('a destroyed user counts nothing more and writes nothing', async () => {
+        const { user, context, source } = await listening()
+
+        context.events.emit('commandRefused', { ...command('c1'), reason: 'queue_full' })
+        user.destroy()
+        context.events.emit('commandRefused', { ...command('c2'), reason: 'queue_full' })
+        await Bun.sleep(30)
+
+        expect(user.frustration).toBeCloseTo(FRUSTRATION_REFUSED)
+        expect(source.patches).toEqual([])
     })
 })
