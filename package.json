@@ -8,7 +8,7 @@
     ],
     "scripts": {
         "test": "bun test",
-        "typecheck": "bun --bun tsc --noEmit"
+        "typecheck": "bun --bun tsc --noEmit && bun run --cwd examples/virtual-infrastructure/web typecheck"
     },
     "devDependencies": {
         "@types/bun": "latest",

@@ -14,5 +14,6 @@
         "skipLibCheck": true,
         "noEmit": true
     },
-    "include": ["packages", "examples"]
+    "include": ["packages", "examples"],
+    "exclude": ["examples/virtual-infrastructure/web"]
 }

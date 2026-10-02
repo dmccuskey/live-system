@@ -15,7 +15,7 @@ router.handle({
 
 ## Status
 
-LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes, commands (the `Router` and the `CommandServer`), and data: `RecordSource`, the record store, `DataManager` and `LiveObjectManager`, the Feathers connection, [Feathers Connect](packages/feathers-connect/README.md), and the web side: the `CommandClient` and `WebStartup` ([Development](docs/development.md)). The demo is not built, so there is nothing to run yet, and nothing is a published API. The design is in [docs/architecture.md](docs/architecture.md).
+LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes, commands (the `Router` and the `CommandServer`), and data: `RecordSource`, the record store, `DataManager` and `LiveObjectManager`, the Feathers connection, [Feathers Connect](packages/feathers-connect/README.md), and the web side: the `CommandClient` and `WebStartup` ([Development](docs/development.md)). The demo runs ([Running the Demo](docs/development.md#running-the-demo)). Nothing is a published API yet. The design is in [docs/architecture.md](docs/architecture.md).
 
 ## Primitives
 
@@ -34,7 +34,7 @@ Technology stays at the edges: LiveSystem does not require a particular database
 
 ## The Demo
 
-The repository will include a self-contained demo, a Virtual Infrastructure Simulator. Virtual users generate commands on their own, virtual servers with finite capacity process them, and a manager adds or removes servers as load changes. It is built on the real LiveSystem packages, so it also proves the design. See [Demo Architecture](docs/architecture-demo.md).
+The repository includes a self-contained demo, a Virtual Infrastructure Simulator. Virtual users generate commands on their own, virtual servers with finite capacity process them, and a manager adds or removes servers as load changes. A web app shows it all as it happens. It is built on the real LiveSystem packages, so it also proves the design. See [Demo Architecture](docs/architecture-demo.md), and [Running the Demo](docs/development.md#running-the-demo) to start it.
 
 ## Documentation
 

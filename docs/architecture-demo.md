@@ -380,6 +380,8 @@ Servers
     [+ Add Server]
 ```
 
+In manual mode each server has a direct remove control too.
+
 Each user has a direct remove control:
 
 ```text
@@ -406,6 +408,37 @@ The command mix is visible but not editable in the initial version.
 Later versions may allow the activity rate to be adjusted with a slider.
 
 The command mix should remain fixed initially so that changing infrastructure produces interesting behavior without giving the Demo User direct control over every variable.
+
+### The Web App
+
+The web app is in Vue 3, and built like the live server: a `LiveSystem`, a connection to the data service, and a manager per kind of record that mirrors its service into a Pinia store ([Processes, Server and Web](architecture.md#processes-server-and-web)). It has no router and no live objects, and its managers do nothing beyond the mirroring: each is an empty `DataManager`.
+
+```text
+Data service ──▶ UserManager, ServerManager,     ──▶ stores ──▶ components
+                 SettingsManager, StatusManager                      │
+                                                                     │ commands
+Live server ◀── dev server (/command) ◀── CommandClient ◀────────────┘
+```
+
+A component reads the stores and sends commands, and nothing else. It changes nothing on the page by itself: a new user appears when its record arrives, and the mode shown is the settings record's. The one exception is the slider, which shows its own value from the first movement until the record has the change. It sends its command when released, not on every movement.
+
+The page is mounted at once and renders from three things ([Starting a Web App](architecture.md#starting-a-web-app)):
+
+| What | Shown as |
+|---|---|
+| System status | a loading line while starting, the reason when the startup failed, the panels when running |
+| Connection status | a warning above the panels while the data service is not connected |
+| Records | the panels: a card per user and per server, the mode and the maximum utilization from the settings record, the utilization and the number of waiting commands from the status record |
+
+The utilization jumps with every command that starts or ends, so the page shows its average: it reads the status record once a second and averages the last 15 readings. This is the page's own smoothing. The record holds the utilization as it is, and automatic scaling does not use the average ([Automatic](#automatic)).
+
+A user's frustration bar is green below 25%, yellow below 50%, orange below 75% and red from there on.
+
+The settings and the status are found by their key, `servers`. While a record is missing, the protocol's defaults are shown.
+
+In manual mode the panel has the add control and each server a remove control, and the slider is disabled. In automatic mode neither control is there. A server that is draining says so.
+
+A command that fails, for example one refused with `automatic_mode` because another browser changed the mode meanwhile, is shown as a notice at the top, which goes away after a few seconds.
 
 ## Demonstration Goals
 

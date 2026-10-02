@@ -5,7 +5,7 @@ test('the web app loads', async () => {
     expect(await import('./index.ts')).toBeDefined()
 })
 
-test.each(['live-system/core', 'live-system/web', 'feathers-connect'])('%s resolves', async (name) => {
+test.each(['live-system/core', 'live-system/web', 'feathers-connect'])('%s resolves', async name => {
     expect(await import(name)).toBeDefined()
 })
 

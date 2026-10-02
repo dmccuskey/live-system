@@ -1,2 +1,5 @@
 // The web app: a display of what happens on the server. It sends commands and never writes records.
-export {}
+export { createWebApp, WEB_APP, type WebApp, type WebAppOptions } from './app.ts'
+export { createCommandSender, type CommandSender } from './command-sender.ts'
+export type { WebContext } from './context.ts'
+export { ServerManager, SettingsManager, StatusManager, UserManager } from './managers.ts'
