@@ -8,6 +8,7 @@ New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the d
 - [Demo Architecture](architecture-demo.md): the Virtual Infrastructure Simulator, the demo application that proves the design
 - [Architecture Decisions](decisions/): the decision records (ADRs): why the design is what it is, and what was rejected
 - [Micro FSM](../packages/micro-fsm/README.md): the state machine behind the lifecycle, a package of its own: what it does and its reference
+- [Feathers Connect](../packages/feathers-connect/README.md): the connection to a Feathers data service and the record sources over its services, a package of its own: what it does and its reference
 
 ## Contribute
 
