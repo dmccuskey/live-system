@@ -4,23 +4,23 @@ LiveSystem is at the design stage. The design is in [Architecture](architecture.
 
 ## Current Baseline
 
-The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)), and in `live-system/core` so are the `LifecycleRunner` ([Architecture](architecture.md#lifecyclerunner)), the `LiveSystem` class that boots and shuts down its managers ([Architecture](architecture.md#the-livesystem-object)), `BaseManager`, `LiveObject`, the `Unsubscribe` type and the optional `EventBus` ([Architecture](architecture.md#the-event-bus)). Commands are in place too: `core` has the `Command`, `CommandResponse` and `CommandError` types and the `fillRoute` helper, and `live-system/server` has the `Router` and the `CommandServer` ([Architecture](architecture.md#commands)). A `LiveSystem` given a router registers each manager's `routes()` in `addManager` and removes them on shutdown. Data is in place in `core` as well ([Architecture](architecture.md#data-and-record-sources)): the `RecordSource` interface and `MemoryRecordSource`, `defineRecordStore` for the Pinia store of one kind of record, `DataManager` with the startup sync, `LiveObjectManager`, which takes its live objects through `init()`, `start()` and `run()`, and the opt-in `debouncePatch`. `feathers-connect` is implemented ([its README](../packages/feathers-connect/README.md)): the `FeathersConnection` and the `FeathersRecordSource` over one of its services, which the demo's live server checks against `RecordSource`. `live-system/web` has the `CommandClient` ([Architecture](architecture.md#the-commandclient)) and `WebStartup`, which boots a web app's system and keeps its status as reactive state ([Architecture](architecture.md#starting-a-web-app)). Of the demo, the data service is implemented ([Demo Architecture](architecture-demo.md#the-data-service)) and the protocol has its record types. The demo's live server and web app are still empty shells, each with a test that proves it loads and resolves the packages it depends on.
+The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)), and in `live-system/core` so are the `LifecycleRunner` ([Architecture](architecture.md#lifecyclerunner)), the `LiveSystem` class that boots and shuts down its managers ([Architecture](architecture.md#the-livesystem-object)), `BaseManager`, `LiveObject`, the `Unsubscribe` type and the optional `EventBus` ([Architecture](architecture.md#the-event-bus)). Commands are in place too: `core` has the `Command`, `CommandResponse` and `CommandError` types and the `fillRoute` helper, and `live-system/server` has the `Router` and the `CommandServer` ([Architecture](architecture.md#commands)). A `LiveSystem` given a router registers each manager's `routes()` in `addManager` and removes them on shutdown. Data is in place in `core` as well ([Architecture](architecture.md#data-and-record-sources)): the `RecordSource` interface and `MemoryRecordSource`, `defineRecordStore` for the Pinia store of one kind of record, `DataManager` with the startup sync, `LiveObjectManager`, which takes its live objects through `init()`, `start()` and `run()`, and the opt-in `debouncePatch`. `feathers-connect` is implemented ([its README](../packages/feathers-connect/README.md)): the `FeathersConnection` and the `FeathersRecordSource` over one of its services, which the demo's live server checks against `RecordSource`. `live-system/web` has the `CommandClient` ([Architecture](architecture.md#the-commandclient)) and `WebStartup`, which boots a web app's system and keeps its status as reactive state ([Architecture](architecture.md#starting-a-web-app)). Of the demo, the data service is implemented ([Demo Architecture](architecture-demo.md#the-data-service)), and so is the live server with its virtual users and servers ([Demo Architecture](architecture-demo.md#the-live-server)): users generate commands, and servers run them within their capacity. Server scaling and user frustration are not implemented yet. The demo's web app is still an empty shell, with a test that proves it loads and resolves the packages it depends on.
 
 | Package | Folder | Depends on |
 |---|---|---|
 | `live-system` | `packages/live-system/` | `micro-fsm`, and from npm `pinia` and `vue` |
 | `micro-fsm` | `packages/micro-fsm/` | nothing |
 | `feathers-connect` | `packages/feathers-connect/` | nothing from this workspace, and from npm the Feathers client and `socket.io-client` |
-| `@virtual-infrastructure/protocol` | `examples/virtual-infrastructure/protocol/` | nothing |
+| `@virtual-infrastructure/protocol` | `examples/virtual-infrastructure/protocol/` | `live-system`, for the command type and `fillRoute` |
 | `@virtual-infrastructure/data-service` | `examples/virtual-infrastructure/data-service/` | the protocol, and from npm the Feathers server and its Socket.IO transport |
-| `@virtual-infrastructure/live-server` | `examples/virtual-infrastructure/live-server/` | `live-system`, `feathers-connect`, the protocol |
+| `@virtual-infrastructure/live-server` | `examples/virtual-infrastructure/live-server/` | `live-system`, `feathers-connect`, the protocol, and from npm `pinia` |
 | `@virtual-infrastructure/web` | `examples/virtual-infrastructure/web/` | `live-system`, `feathers-connect`, the protocol |
 
 `live-system` has no root entry point. Import from `live-system/core`, `live-system/server` or `live-system/web`.
 
 `micro-fsm` and `feathers-connect` are built to move to repositories of their own, so neither may depend on `live-system`. Their tests check this. `feathers-connect` therefore satisfies `RecordSource` by its shape, without importing it, and a test in the demo's live server, which depends on both, fails the typecheck if the two drift apart.
 
-The demo's protocol is laid out by domain: `users/` and `servers/` each hold `record.ts`, `routes.ts`, `commands.ts` and `constants.ts`, beside `services.ts` and `events.ts`. Import a file by its path, for example `@virtual-infrastructure/protocol/users/record`.
+The demo's protocol is laid out by domain: `users/` and `servers/` each hold a record, routes, commands and constants file, named with the domain first (`users.record.ts`, `users.routes.ts`, `users.commands.ts`, `users.constants.ts`), beside `services.ts` and `events.ts`. A command creator is named `create…Command`, for example `createAddUserCommand()`. Import a file by its path, for example `@virtual-infrastructure/protocol/users/users.record`.
 
 ## Build and Test
 
@@ -38,7 +38,9 @@ To run the tests of one package, give its folder:
 bun test packages/micro-fsm
 ```
 
-### Running the Demo's Data Service
+### Running the Demo
+
+The demo is a process per part. Start the data service first:
 
 ```sh
 cd examples/virtual-infrastructure/data-service
@@ -46,6 +48,21 @@ bun run start
 ```
 
 It listens on port 3030 and keeps its records in `data/virtual-infrastructure.sqlite` in its own folder, which it creates on the first start and Git ignores. Delete the file to start with no records. To change either, set `DATA_SERVICE_PORT` or `DATA_SERVICE_DB`. Stop it with Ctrl+C.
+
+Then, in a second terminal, the live server:
+
+```sh
+cd examples/virtual-infrastructure/live-server
+bun run start
+```
+
+It connects to the data service at `http://localhost:3030` and takes commands on port 3031. To change either, set `DATA_SERVICE_URL` or `LIVE_SERVER_PORT`. With no records it creates one server and one user, so commands begin to run at once. Stop it with Ctrl+C.
+
+A command is a POST to `/command`. To add a user:
+
+```sh
+curl -X POST http://localhost:3031/command -H 'Content-Type: application/json' -d '{"route":"users/add"}'
+```
 
 ### No Build Step
 

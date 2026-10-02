@@ -859,15 +859,15 @@ TradeSystem
         ├── services.ts        service paths, one per kind of record
         ├── events.ts          event bus events, if used
         ├── orders/
-        │   ├── record.ts      the record's fields
-        │   ├── routes.ts      route patterns for its commands
-        │   ├── commands.ts    each command's data and its creator
-        │   └── constants.ts
+        │   ├── orders.record.ts      the record's fields
+        │   ├── orders.routes.ts      route patterns for its commands
+        │   ├── orders.commands.ts    each command's data and its creator
+        │   └── orders.constants.ts
         └── positions/
             └── ...
 ```
 
-The protocol is organized by domain: a domain's records, routes and commands sit together, as a manager owns one domain.
+The protocol is organized by domain: a domain's records, routes and commands sit together, as a manager owns one domain. A file's name begins with its domain, so that among open files `orders.commands.ts` is not mistaken for another domain's. A command creator is named for what it returns, `createCancelOrderCommand()`: it builds the command and does not send it.
 
 LiveSystem provides the machinery for handling these concepts.
 

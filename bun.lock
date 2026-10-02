@@ -30,11 +30,15 @@
         "@virtual-infrastructure/protocol": "workspace:*",
         "feathers-connect": "workspace:*",
         "live-system": "workspace:*",
+        "pinia": "^4.0.3",
       },
     },
     "examples/virtual-infrastructure/protocol": {
       "name": "@virtual-infrastructure/protocol",
       "version": "0.0.0",
+      "dependencies": {
+        "live-system": "workspace:*",
+      },
     },
     "examples/virtual-infrastructure/web": {
       "name": "@virtual-infrastructure/web",

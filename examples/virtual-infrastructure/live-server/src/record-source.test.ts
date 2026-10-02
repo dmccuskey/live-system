@@ -1,7 +1,7 @@
 // feathers-connect and LiveSystem do not depend on each other: here, where both
 // are used, is the check that a Feathers record source is a LiveSystem one.
 import { expect, test } from 'bun:test'
-import type { UserRecord } from '@virtual-infrastructure/protocol/users/record'
+import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
 import { FeathersConnection } from 'feathers-connect'
 import type { RecordSource } from 'live-system/core'

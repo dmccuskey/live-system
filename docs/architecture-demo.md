@@ -225,9 +225,85 @@ interface ServerRecord {
 
 A user's command mix is three fractions that sum to 1, and its frustration runs from 0 to 1.
 
-A server has one kind of capacity, counted in whole units, and a command costs a whole number of them. For example, a server of 10 units running one search command that costs 4 has a load of 4. Whole numbers are easier to reconcile by eye than fractions of a server.
+A server has one kind of capacity, counted in whole units, and a command costs a whole number of them. For example, a server of 10 units running one agentic command that costs 4 has a load of 4. Whole numbers are easier to reconcile by eye than fractions of a server.
 
 The service does not validate what it is given: only the live server writes to it.
+
+## The Live Server
+
+The live server is a process of its own: a `LiveSystem` with a `ServerManager` and a `UserManager`, connected to the data service and taking commands over HTTP. It is the only writer of records.
+
+There are two ways in, and they are kept apart:
+
+```text
+Demo User (UI)                         Virtual users (live objects)
+      │                                        │
+      │ commands, over HTTP                    │ events
+      ▼                                        ▼
+   Router                                  Event bus
+      │                                        │
+      ▼                                        ▼
+UserManager, ServerManager              ServerManager ──▶ a VirtualServer
+```
+
+**Routes are for what the Demo User changes.** There are four, each with a command creator in the protocol:
+
+| Route | Does |
+|---|---|
+| `users/add` | creates a user, with the next free name and a random profile |
+| `users/:id/remove` | removes the user |
+| `servers/add` | creates a server of 10 capacity units |
+| `servers/:id/remove` | removes the server |
+
+**What the virtual users generate travels over the event bus.** A user and a server never know each other, and nothing calls a manager directly. The events are defined in the protocol's `events.ts`:
+
+| Event | Emitted by | Means |
+|---|---|---|
+| `commandRequested` | a `VirtualUser` | the user wants a command run. It carries the command's ID, the user's ID and the type |
+| `commandQueued` | the `ServerManager` | the command waits in the queue |
+| `commandStarted` | the `VirtualServer` that took it | the command is running, and on which server |
+| `commandRefused` | the `ServerManager` | the command will not be run, and why: `queue_full` when its user already has one waiting, `dropped` when it was waiting as its user was removed or the system stopped |
+| `commandFinished` | the `VirtualServer` | the command left its server: `completed` after its duration, or `aborted` because the server was removed or the system stopped |
+| `userRemoved` | the `UserManager` | a user is gone, so whatever of its waits can be dropped |
+
+### How a Command Runs
+
+A `VirtualUser`, once running, emits a `commandRequested` event at its record's rate. The requests are unevenly spaced around that rate, and each one's type is drawn from the user's command mix.
+
+The `ServerManager` listens for the event and gives the command to the server with the most free capacity that can fit its cost. A server's load never exceeds its capacity: with no room anywhere, the command waits in the queue.
+
+### The Queue
+
+The `ServerManager` keeps one queue for all servers, in memory, and serves it from the front each time a command finishes or a server is added.
+
+The order is strict: a command that waits for room keeps everything behind it waiting, even a smaller command that would fit now. Without this, small commands would keep taking the room as it comes free, and a large one could wait forever. With it, every command the queue accepts is run in the end.
+
+Each user has two limits:
+
+| Limit | Value | Beyond it |
+|---|---|---|
+| Commands running at once | 3 | the next one waits in the queue, until one of the user's own finishes |
+| Commands waiting in the queue | 1 | the next one is refused |
+
+A user refused once and refused again on every retry would never be served. The one place in the queue rules this out, and the queue is never longer than the number of users.
+
+Three commands at once are what let a few users load a few servers: a single user can ask for up to 12 units, more than one server has. A command that waits for its own user, not for room, does not hold up the commands behind it.
+
+A refused command is unmet demand, and so is the time a command spends waiting.
+
+A `VirtualServer` keeps its active commands in memory and holds a timer for each. Its record holds only their count and the load they add up to, written shortly after each change, so that changes close together are one write. A restart therefore finds no command running, and each server clears what its record says of the earlier run.
+
+The command types, with placeholder values to be tuned once the demo runs:
+
+| Type | Cost | Duration |
+|---|---|---|
+| search | 1 unit | 2 s |
+| standard | 2 units | 5 s |
+| agentic | 4 units | 15 s |
+
+### A First Start
+
+With no server record at start, the `ServerManager` creates one, and with no user record the `UserManager` creates one. The system therefore works without any input.
 
 ## Demo User Interface
 
