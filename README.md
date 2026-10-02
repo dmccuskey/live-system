@@ -15,7 +15,7 @@ router.handle({
 
 ## Status
 
-LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes, commands (the `Router` and the `CommandServer`), and data: `RecordSource`, the record store, `DataManager` and `LiveObjectManager` ([Development](docs/development.md)). The Feathers connection, the web side and the demo are not built, so there is nothing to run yet, and nothing is a published API. The design is in [docs/architecture.md](docs/architecture.md).
+LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes, commands (the `Router` and the `CommandServer`), and data: `RecordSource`, the record store, `DataManager` and `LiveObjectManager`, and the Feathers connection, [Feathers Connect](packages/feathers-connect/README.md) ([Development](docs/development.md)). The web side and the demo are not built, so there is nothing to run yet, and nothing is a published API. The design is in [docs/architecture.md](docs/architecture.md).
 
 ## Primitives
 

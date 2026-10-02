@@ -582,6 +582,8 @@ RecordSource
 
 `core` provides `MemoryRecordSource`, which keeps its records in memory and emits the same change events, for testing a manager without a data service.
 
+The `feathers-connect` package provides `FeathersRecordSource`, over one service of a `FeathersConnection` ([its README](../packages/feathers-connect/README.md)).
+
 This allows the application architecture to remain independent of its storage technology.
 
 Decisions: [ADR 006](decisions/006-record-source-boundary.md), [ADR 007](decisions/007-data-service-source-of-truth.md), [ADR 008](decisions/008-startup-sync.md).

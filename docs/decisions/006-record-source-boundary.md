@@ -1,6 +1,6 @@
 # ADR 006: The RecordSource Boundary
 
-**Status:** Accepted
+**Status:** Accepted; amended 2026-10-02 (see [Amendment](#amendment-2026-10-02-the-feathers-implementation))
 
 ## Context
 
@@ -53,3 +53,13 @@ The name was `DataRepository` in the design discussion. It was changed because "
 - Other backends are possible by implementing the interface.
 - The interface is small, and anything a backend offers beyond it (queries, pagination) is out of reach through it until the interface grows.
 - The interface may still change where the existing wrapper code shows a better shape.
+
+## Amendment 2026-10-02: The Feathers Implementation
+
+Building `feathers-connect` settled what was left open above:
+
+- **The interface is unchanged.** Nothing in the earlier wrappers had a better shape.
+- **The data service creates string IDs.** A Feathers database adapter creates numeric IDs by default. The data service is set up to create strings instead, so the IDs in the database are the IDs in the records, a reference from one record to another has the same type as an ID, and a record created with an `id` keeps it. `FeathersRecordSource` renames the ID field where the backend calls it otherwise (`_id`) and converts no types.
+- **`feathers-connect` does not import `RecordSource`.** It is built to move to a repository of its own, so it satisfies the interface by its shape. A test in the demo's live server, which depends on both packages, fails the typecheck if the two drift apart.
+- **A failed call rejects with Feathers' own error,** unchanged, so a missing record (`NotFound`, code 404) can be told from another failure. The startup sync does not use this yet ([ADR 008](008-startup-sync.md)).
+- **No authentication.** The earlier connection wrapper authenticated; this one does not, until authentication is designed ([ADR 013](013-server-web-symmetry.md)).
