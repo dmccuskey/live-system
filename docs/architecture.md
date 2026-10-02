@@ -106,7 +106,11 @@ Application
 An application creates one instance of `LiveSystem`, adds its managers, and boots it:
 
 ```ts
-const system = new LiveSystem()
+const system = new LiveSystem<AppContext>({
+    context: { events, store },
+    connect: () => connection.open(),
+    disconnect: () => connection.close()
+})
 
 system.addManager(context => new UserManager(context, userSource))
 system.addManager(context => new ServerManager(context, serverSource))
@@ -114,7 +118,9 @@ system.addManager(context => new ServerManager(context, serverSource))
 await system.boot()
 ```
 
-`boot()` takes the system through its whole lifecycle, from `CREATED` to `RUNNING`; [LifecycleRunner](#lifecyclerunner) shows how.
+The system is given three things, all of them the application's: the context that every manager shares, and optionally how to connect to the infrastructure it depends on and how to disconnect from it. LiveSystem itself opens no connection, so it assumes no technology.
+
+`boot()` takes the system through its whole lifecycle, from `CREATED` to `RUNNING`; [LifecycleRunner](#lifecyclerunner) shows how. If a step fails, what had started is stopped and disconnected, and `boot()` rejects with the error.
 
 `shutdown()` is the counterpart. It stops the running system and releases what it holds:
 
@@ -122,7 +128,9 @@ await system.boot()
 await system.shutdown()
 ```
 
-`addManager()` takes a function that creates the manager. The system calls it with the one context that every manager shares, so the application does not pass shared parts around itself. `addManager()` then does the rest:
+Called during a boot, it waits for the boot to settle and then stops. Called again, it does nothing.
+
+`addManager()` takes a function that creates the manager, and returns the manager. The system calls the function with the one context that every manager shares, so the application does not pass shared parts around itself. Managers are added before `boot()`. `addManager()` then does the rest:
 
 ```text
 system.addManager(factory)
@@ -295,7 +303,7 @@ system.shutdown()
 lifecycle.transition('stopped')  → system.stopManagers()
 ```
 
-Managers are stopped in the reverse of the order they were added, so a manager that depends on one added earlier is stopped first. The system then closes its infrastructure connections.
+Managers are stopped in the reverse of the order they were added, so a manager that depends on one added earlier is stopped first. Only a manager whose `init()` was begun is stopped, and one that fails to stop does not keep the others from stopping: the errors are reported once all have been stopped. The system then closes its infrastructure connections.
 
 If initialization fails, the transition fails and the system does not silently advance to the next state.
 
@@ -334,9 +342,9 @@ BaseManager
 `BaseManager` should remain intentionally small.
 
 ```ts
-abstract class BaseManager {
+abstract class BaseManager<C = unknown> {
     constructor(
-        protected readonly context: ManagerContext
+        protected readonly context: C
     ) {}
 
     routes(): Routes {
@@ -350,14 +358,16 @@ abstract class BaseManager {
 }
 ```
 
-A manager receives as little as possible. The context holds only what every manager shares:
+A manager receives as little as possible. The context holds only what every manager shares. Its type is the application's own, since the store and the events are the application's choice:
 
 ```ts
-interface ManagerContext {
+interface AppContext {
     events: EventBus
     store: Store
 }
 ```
+
+The application's managers extend `BaseManager<AppContext>`, and the system is a `LiveSystem<AppContext>`.
 
 The event bus is passed in rather than reached for globally, so a test can give a manager its own. The store is the application's local reactive state.
 
@@ -387,9 +397,9 @@ Because each route knows its manager, removing a manager also removes its routes
 A manager that works with records also receives the record source for its one kind of record:
 
 ```ts
-abstract class DataManager<T> extends BaseManager {
+abstract class DataManager<T, C = unknown> extends BaseManager<C> {
     constructor(
-        context: ManagerContext,
+        context: C,
         protected readonly source: RecordSource<T>
     ) {
         super(context)
@@ -484,21 +494,19 @@ private createObject(record: VirtualServerRecord) {
 }
 ```
 
-The object can perform its own cleanup:
+The object performs its own cleanup. `LiveObject`, the base class, provides `destroy()`: it does nothing the second time it is called, calls the object's `release()`, and then tells the owner through `onDestroyed`. The object says what there is to release:
 
 ```ts
-destroy() {
-    if (this.destroyed) return
-
-    this.destroyed = true
-
-    this.stopTimers()
-    this.removeListeners()
-    this.cancelPendingWork()
-
-    this.options.onDestroyed()
+class VirtualServer extends LiveObject {
+    protected release() {
+        this.stopTimers()
+        this.removeListeners()
+        this.cancelPendingWork()
+    }
 }
 ```
+
+Most of the work in an application is in its live objects: the base class only settles how one ends.
 
 This allows a simple mechanism to control basic parent-child ownership.
 

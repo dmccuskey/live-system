@@ -17,7 +17,9 @@ Three small parts, each with one responsibility:
 **The system object.** An application creates one instance of the reusable `LiveSystem` class, adds its managers, and boots it:
 
 ```ts
-const system = new LiveSystem()
+const system = new LiveSystem<AppContext>({
+    context: { events, store }
+})
 
 system.addManager(context => new UserManager(context, userSource))
 system.addManager(context => new ServerManager(context, serverSource))
@@ -26,7 +28,8 @@ await system.boot()
 ```
 
 - `addManager()` takes a function that creates the manager. The system calls it with the one context every manager shares, adds the manager to its registry, and registers the manager's routes ([ADR 009](009-commands-events-crud.md)).
-- The context holds as little as possible: the event bus and the store. The router and the system itself are not in it. What differs per manager, such as its record source ([ADR 006](006-record-source-boundary.md)), is passed by the function that creates it.
+- The context holds as little as possible: the event bus and the store. Its type is the application's own: `LiveSystem<C>` and `BaseManager<C>` carry it without naming its fields. The router and the system itself are not in it. What differs per manager, such as its record source ([ADR 006](006-record-source-boundary.md)), is passed by the function that creates it.
+- The system opens no connection of its own. The application may pass `connect` and `disconnect` functions with the context, and the system calls them at the right points of the lifecycle.
 - `boot()` hands startup to the runner. `shutdown()` is its counterpart ([ADR 014](014-failure-and-shutdown.md)).
 
 **The runner.** `run()` makes the transitions in order. Each transition's `enter` calls back into the system to do that state's work:
@@ -59,4 +62,4 @@ Rejected:
 - `micro-fsm` has no knowledge of LiveSystem and is built to move to its own repository.
 - The lifecycle's order is readable in one place, the runner.
 - There are three small classes where the prototype had one large one.
-- How the context is typed when the store is the application's choice is left to the implementation.
+- The framework does not check what an application puts in its context. Keeping it small is the application's discipline.
