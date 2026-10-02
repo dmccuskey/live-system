@@ -1,6 +1,9 @@
 // A user's behavioral profile: generated when the user is created, then fixed.
 import type { CommandType } from '@virtual-infrastructure/protocol/servers/servers.constants'
-import { MAX_COMMANDS_PER_MINUTE, MIN_COMMANDS_PER_MINUTE } from '@virtual-infrastructure/protocol/users/users.constants'
+import {
+    MAX_COMMANDS_PER_MINUTE,
+    MIN_COMMANDS_PER_MINUTE,
+} from '@virtual-infrastructure/protocol/users/users.constants'
 import type { CommandMix, UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 
 export type UserProfile = Pick<UserRecord, 'commandsPerMinute' | 'commandMix'>

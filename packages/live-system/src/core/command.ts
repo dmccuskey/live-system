@@ -16,8 +16,7 @@ export interface CommandErrorInfo {
 
 /** What the sender of a command gets back: that it was accepted, or that it failed and why. */
 export type CommandResponse<R = unknown> =
-    | { status: 'accepted'; result?: R }
-    | { status: 'failed'; error: CommandErrorInfo }
+    { status: 'accepted'; result?: R } | { status: 'failed'; error: CommandErrorInfo }
 
 /**
  * A command's failure, as an error to throw. A handler throws one to choose

@@ -31,9 +31,9 @@ export class LifecycleRunner {
                 running: { from: 'started', enter: () => owner.runManagers() },
                 stopped: {
                     from: ['created', 'ready', 'initialized', 'started', 'running'],
-                    enter: () => owner.stopManagers()
-                }
-            }
+                    enter: () => owner.stopManagers(),
+                },
+            },
         })
     }
 

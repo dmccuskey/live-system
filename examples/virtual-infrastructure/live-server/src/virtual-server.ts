@@ -49,12 +49,16 @@ export class VirtualServer extends LiveObject {
         this.capacity = record.capacity
         this.#record = record
         this.#context = context
-        this.#write = debouncePatch<ServerRecord>(data => source.patch(this.id, data), WRITE_DELAY * context.timeScale, {
-            onError: error => {
-                // A write that fails after the server has gone has nothing left to report
-                if (!this.isDestroyed) console.error(`VirtualServer ${this.id}: a write failed`, error)
+        this.#write = debouncePatch<ServerRecord>(
+            data => source.patch(this.id, data),
+            WRITE_DELAY * context.timeScale,
+            {
+                onError: error => {
+                    // A write that fails after the server has gone has nothing left to report
+                    if (!this.isDestroyed) console.error(`VirtualServer ${this.id}: a write failed`, error)
+                },
             },
-        })
+        )
     }
 
     /** The capacity units the active commands take up. */

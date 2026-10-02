@@ -89,7 +89,7 @@ export abstract class LiveObjectManager<T extends HasId, O extends LiveObject, C
                 this.#progress.delete(object)
 
                 if (this.#objects.get(record.id) === object) this.#objects.delete(record.id)
-            }
+            },
         })
 
         this.#objects.set(record.id, object)
@@ -132,7 +132,11 @@ export abstract class LiveObjectManager<T extends HasId, O extends LiveObject, C
             }
         })
 
-        if (!object.isDestroyed) this.#progress.set(object, done.catch(() => {}))
+        if (!object.isDestroyed)
+            this.#progress.set(
+                object,
+                done.catch(() => {}),
+            )
 
         return done
     }

@@ -1,6 +1,9 @@
 // The live server whole: a real data service, a real connection, commands over HTTP.
 import { afterEach, describe, expect, test } from 'bun:test'
-import { createAddServerCommand, createRemoveServerCommand } from '@virtual-infrastructure/protocol/servers/servers.commands'
+import {
+    createAddServerCommand,
+    createRemoveServerCommand,
+} from '@virtual-infrastructure/protocol/servers/servers.commands'
 import type { AddServerResult } from '@virtual-infrastructure/protocol/servers/servers.commands'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
@@ -104,8 +107,19 @@ describe('a first start', () => {
         const url = await startDataService()
         const { users, servers } = await connect(url)
 
-        await users.create({ name: 'Zed', commandsPerMinute: 0, commandMix: { search: 1, standard: 0, agentic: 0 }, frustration: 0 })
-        const stale = await servers.create({ name: 'Server 4', capacity: 10, load: 7, activeCommands: 3, isDraining: false })
+        await users.create({
+            name: 'Zed',
+            commandsPerMinute: 0,
+            commandMix: { search: 1, standard: 0, agentic: 0 },
+            frustration: 0,
+        })
+        const stale = await servers.create({
+            name: 'Server 4',
+            capacity: 10,
+            load: 7,
+            activeCommands: 3,
+            isDraining: false,
+        })
 
         await startLiveServer(url)
 
@@ -149,7 +163,7 @@ describe('commands', () => {
         expect((await users.find()).map(record => record.name)).toEqual(['Quiet'])
     })
 
-    test('a command requested raises the server record\'s load, and its end lowers it', async () => {
+    test("a command requested raises the server record's load, and its end lowers it", async () => {
         const url = await startDataService()
         const { servers } = await quiet(url)
         const seen: ServerRecord[] = []
@@ -191,7 +205,7 @@ describe('commands', () => {
         expect(finished.map(event => event.outcome)).toEqual(['completed', 'completed', 'completed'])
     })
 
-    test('a removed user\'s waiting command is dropped', async () => {
+    test("a removed user's waiting command is dropped", async () => {
         const url = await startDataService()
         const { users } = await quiet(url)
         const { liveServer, send } = await startLiveServer(url)
@@ -213,15 +227,22 @@ describe('commands', () => {
         await quiet(url)
         const { send } = await startLiveServer(url)
 
-        expect(await send({ route: 'servers/run-command', data: { userId: 'someone', type: 'search' } })).toMatchObject({
-            status: 'failed',
-            error: { code: 'not_found' },
-        })
+        expect(await send({ route: 'servers/run-command', data: { userId: 'someone', type: 'search' } })).toMatchObject(
+            {
+                status: 'failed',
+                error: { code: 'not_found' },
+            },
+        )
     })
 })
 
 describe('settings and scaling', () => {
-    const quietUser = { name: 'Quiet', commandsPerMinute: 0, commandMix: { search: 1, standard: 0, agentic: 0 }, frustration: 0 }
+    const quietUser = {
+        name: 'Quiet',
+        commandsPerMinute: 0,
+        commandMix: { search: 1, standard: 0, agentic: 0 },
+        frustration: 0,
+    }
 
     test('a first start creates the settings and the status', async () => {
         const url = await startDataService()
@@ -234,7 +255,9 @@ describe('settings and scaling', () => {
         const id = expect.stringMatching(/^[0-9a-f-]{36}$/)
 
         expect(await settings.find()).toEqual([{ id, key: 'servers', scalingMode: 'automatic', maxUtilization: 0.75 }])
-        expect(await status.find()).toEqual([{ id, key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 }])
+        expect(await status.find()).toEqual([
+            { id, key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 },
+        ])
     })
 
     test('a second start keeps the settings', async () => {
@@ -257,13 +280,18 @@ describe('settings and scaling', () => {
         await users.create(quietUser)
         const { send } = await startLiveServer(url)
 
-        expect(await send(createAddServerCommand())).toMatchObject({ status: 'failed', error: { code: 'automatic_mode' } })
+        expect(await send(createAddServerCommand())).toMatchObject({
+            status: 'failed',
+            error: { code: 'automatic_mode' },
+        })
         expect(await send(createUpdateSettingsCommand('servers', { maxUtilization: 2 }))).toMatchObject({
             status: 'failed',
             error: { code: 'bad_request' },
         })
 
-        expect(await send(createUpdateSettingsCommand('servers', { scalingMode: 'manual' }))).toEqual({ status: 'accepted' })
+        expect(await send(createUpdateSettingsCommand('servers', { scalingMode: 'manual' }))).toEqual({
+            status: 'accepted',
+        })
 
         expect(await settings.find()).toMatchObject([{ key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 }])
         expect(await send(createAddServerCommand())).toMatchObject({ status: 'accepted' })

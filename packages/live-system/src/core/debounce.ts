@@ -24,7 +24,7 @@ export interface DebouncedPatch<T> {
 export function debouncePatch<T>(
     write: (data: Partial<T>) => unknown,
     delay: number,
-    options: DebouncePatchOptions = {}
+    options: DebouncePatchOptions = {},
 ): DebouncedPatch<T> {
     const onError = options.onError ?? (error => console.error('debouncePatch: a write failed', error))
 
@@ -62,6 +62,6 @@ export function debouncePatch<T>(
         },
         get isPending() {
             return pending !== undefined
-        }
+        },
     }
 }

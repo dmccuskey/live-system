@@ -40,7 +40,7 @@ describe('CommandError', () => {
         expect(JSON.parse(JSON.stringify(error))).toEqual({
             name: 'ServerBusy',
             message: 'The server is busy',
-            code: 'busy'
+            code: 'busy',
         })
     })
 
@@ -48,7 +48,7 @@ describe('CommandError', () => {
         expect(CommandError.info(new TypeError('no such thing'))).toEqual({
             name: 'TypeError',
             message: 'no such thing',
-            code: 'internal'
+            code: 'internal',
         })
         expect(CommandError.info('plain text')).toEqual({ name: 'Error', message: 'plain text', code: 'internal' })
     })

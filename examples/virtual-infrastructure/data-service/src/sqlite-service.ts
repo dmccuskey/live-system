@@ -38,7 +38,9 @@ export class SqliteService<T extends StoredRecord = StoredRecord> {
         const records = rows.map(row => JSON.parse(row.data) as T)
         const query = Object.entries(params?.query ?? {})
 
-        return records.filter(record => query.every(([field, value]) => (record as Record<string, unknown>)[field] === value))
+        return records.filter(record =>
+            query.every(([field, value]) => (record as Record<string, unknown>)[field] === value),
+        )
     }
 
     async get(id: string): Promise<T> {

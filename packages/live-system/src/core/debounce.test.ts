@@ -135,7 +135,7 @@ describe('debouncePatch()', () => {
         const errors: unknown[] = []
         const failure = new Error('write failed')
         const debounced = debouncePatch<Item>(() => Promise.reject(failure), 10, {
-            onError: error => errors.push(error)
+            onError: error => errors.push(error),
         })
 
         debounced.patch({ count: 1 })
@@ -152,7 +152,7 @@ describe('debouncePatch()', () => {
                 throw failure
             },
             10,
-            { onError: error => errors.push(error) }
+            { onError: error => errors.push(error) },
         )
 
         debounced.patch({ count: 1 })

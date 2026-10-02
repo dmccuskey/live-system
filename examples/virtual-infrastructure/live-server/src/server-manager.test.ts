@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { createAddServerCommand, createRemoveServerCommand } from '@virtual-infrastructure/protocol/servers/servers.commands'
+import {
+    createAddServerCommand,
+    createRemoveServerCommand,
+} from '@virtual-infrastructure/protocol/servers/servers.commands'
 import type { AddServerResult } from '@virtual-infrastructure/protocol/servers/servers.commands'
 import { MAX_SERVERS, type CommandType } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
@@ -94,7 +97,14 @@ describe('the servers', () => {
 
         const { id } = result(await send<AddServerResult>(createAddServerCommand()))
 
-        expect(await source.get(id)).toEqual({ id, name: 'Server 8', capacity: 10, load: 0, activeCommands: 0, isDraining: false })
+        expect(await source.get(id)).toEqual({
+            id,
+            name: 'Server 8',
+            capacity: 10,
+            load: 0,
+            activeCommands: 0,
+            isDraining: false,
+        })
         expect(manager.getObject(id)).toBeDefined()
     })
 
@@ -112,7 +122,10 @@ describe('the servers', () => {
     test('removing a server that does not exist is not_found', async () => {
         const { send } = await boot([server('s1')])
 
-        expect(await send(createRemoveServerCommand('nope'))).toMatchObject({ status: 'failed', error: { code: 'not_found' } })
+        expect(await send(createRemoveServerCommand('nope'))).toMatchObject({
+            status: 'failed',
+            error: { code: 'not_found' },
+        })
     })
 
     test('removing a server aborts the commands it runs', async () => {
@@ -258,7 +271,10 @@ describe('the queue', () => {
     })
 
     test('a removed server aborts what it ran, and what waits moves on to the others', async () => {
-        const { manager, context, request, send, started } = await boot([server('s1', { capacity: 4 }), server('s2', { capacity: 4 })])
+        const { manager, context, request, send, started } = await boot([
+            server('s1', { capacity: 4 }),
+            server('s2', { capacity: 4 }),
+        ])
         const finished = finishedEvents(context)
 
         request('agentic', 'u1')
@@ -285,7 +301,7 @@ describe('the limits of one user', () => {
         expect(manager.getObject('s1')?.load).toBe(3)
     })
 
-    test('the waiting command starts when one of the user\'s own finishes', async () => {
+    test("the waiting command starts when one of the user's own finishes", async () => {
         const { context, request, started } = await boot([server('s1')])
         const finished = finishedEvents(context)
 
@@ -345,7 +361,7 @@ describe('the limits of one user', () => {
         expect(started.at(-1)).toMatchObject({ commandId: 'c4', serverId: 's2' })
     })
 
-    test('a removed user\'s waiting command is dropped', async () => {
+    test("a removed user's waiting command is dropped", async () => {
         const { manager, context, request, refused } = await boot([server('s1', { capacity: 1 })])
 
         request('search', 'u1')
@@ -358,7 +374,7 @@ describe('the limits of one user', () => {
     })
 })
 
-describe('the queue\'s length', () => {
+describe("the queue's length", () => {
     test('it is announced each time it changes', async () => {
         const { context, request } = await boot([server('s1', { capacity: 4 })])
         const lengths = collect(context.events, 'servers.queueChanged')
@@ -368,10 +384,17 @@ describe('the queue\'s length', () => {
 
         request('agentic', 'u2')
         request('agentic', 'u3')
-        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }, { length: 2, waitingForRoom: 2 }])
+        expect(lengths).toEqual([
+            { length: 1, waitingForRoom: 1 },
+            { length: 2, waitingForRoom: 2 },
+        ])
 
         context.events.emit('userRemoved', { userId: 'u2' })
-        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }, { length: 2, waitingForRoom: 2 }, { length: 1, waitingForRoom: 1 }])
+        expect(lengths).toEqual([
+            { length: 1, waitingForRoom: 1 },
+            { length: 2, waitingForRoom: 2 },
+            { length: 1, waitingForRoom: 1 },
+        ])
     })
 
     test('a command that waits for its own user is not one that waits for room', async () => {
@@ -405,7 +428,10 @@ describe('the queue\'s length', () => {
         request('search', 'u2')
         await until(() => lengths.length === 2)
 
-        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }, { length: 0, waitingForRoom: 0 }])
+        expect(lengths).toEqual([
+            { length: 1, waitingForRoom: 1 },
+            { length: 0, waitingForRoom: 0 },
+        ])
     })
 
     test('the shutdown announces it as empty', async () => {
@@ -416,7 +442,10 @@ describe('the queue\'s length', () => {
         request('agentic', 'u2')
         await system.shutdown()
 
-        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }, { length: 0, waitingForRoom: 0 }])
+        expect(lengths).toEqual([
+            { length: 1, waitingForRoom: 1 },
+            { length: 0, waitingForRoom: 0 },
+        ])
     })
 })
 
@@ -529,7 +558,13 @@ describe('the scaling mode', () => {
         const stub = stubPolicy()
         const source = new MemoryRecordSource<ServerRecord>([server('s1')])
         const booted = await bootSystem<[ServerManager]>([
-            context => new ServerManager(context, source, defineRecordStore<ServerRecord>('servers')(createPinia()), stub.policy),
+            context =>
+                new ServerManager(
+                    context,
+                    source,
+                    defineRecordStore<ServerRecord>('servers')(createPinia()),
+                    stub.policy,
+                ),
         ])
 
         systems.push(booted.system)
@@ -587,7 +622,10 @@ describe('the scaling mode', () => {
 
         announce(context)
 
-        expect(await send(createAddServerCommand())).toMatchObject({ status: 'failed', error: { code: 'automatic_mode' } })
+        expect(await send(createAddServerCommand())).toMatchObject({
+            status: 'failed',
+            error: { code: 'automatic_mode' },
+        })
         expect(await send(createRemoveServerCommand('s1'))).toMatchObject({
             status: 'failed',
             error: { code: 'automatic_mode' },
@@ -848,7 +886,9 @@ describe('scaling down', () => {
         stub.decisions.push('down')
         await stub.sampled()
 
-        expect([...manager.objects.values()].filter(object => object.isDraining).map(object => object.id)).toEqual(['s3'])
+        expect([...manager.objects.values()].filter(object => object.isDraining).map(object => object.id)).toEqual([
+            's3',
+        ])
     })
 
     test('one server leaves at a time', async () => {
@@ -1019,7 +1059,9 @@ describe('stopping', () => {
     })
 
     test('shutdown aborts what runs, drops what waits, removes the routes and stops listening', async () => {
-        const { system, manager, context, send, request, started, refused } = await boot([server('s1', { capacity: 4 })])
+        const { system, manager, context, send, request, started, refused } = await boot([
+            server('s1', { capacity: 4 }),
+        ])
         const events = finishedEvents(context)
 
         request('agentic', 'u1')

@@ -117,7 +117,7 @@ function parse(pattern: string): Segment[] {
 function matches(route: Route, parts: string[]): boolean {
     if (route.segments.length !== parts.length) return false
     return route.segments.every((segment, index) =>
-        segment.isParam ? parts[index] !== '' : segment.value === parts[index]
+        segment.isParam ? parts[index] !== '' : segment.value === parts[index],
     )
 }
 

@@ -17,10 +17,10 @@ const machine = new StateMachine<State>({
             from: 'loading',
             enter: async () => {
                 await fetchTheData()
-            }
+            },
         },
-        failed: { from: 'loading' }
-    }
+        failed: { from: 'loading' },
+    },
 })
 
 await machine.transition('loading')
@@ -67,8 +67,8 @@ The package is not published yet. It is part of the [LiveSystem](../../README.md
         states: {
             open: { from: 'closed', enter: () => console.log('opening') },
             closed: { from: 'open' },
-            locked: { from: 'closed' }
-        }
+            locked: { from: 'closed' },
+        },
     })
 
     await door.transition('open')
@@ -99,14 +99,14 @@ Delete `try.ts` when you are done.
 
 ## Reference
 
-| | |
-|---|---|
-| [`new StateMachine(config)`](#configuration) | creates a machine in its `initial` state |
-| [`machine.state`](#state) | the current state |
-| [`machine.is(state)`](#is) | whether the machine is in `state` |
-| [`machine.can(target)`](#can) | whether `transition(target)` would be accepted now |
-| [`await machine.transition(target)`](#transition) | moves to `target` |
-| [`TransitionError`](#transitionerror) | thrown when a transition is refused |
+|                                                   |                                                    |
+| ------------------------------------------------- | -------------------------------------------------- |
+| [`new StateMachine(config)`](#configuration)      | creates a machine in its `initial` state           |
+| [`machine.state`](#state)                         | the current state                                  |
+| [`machine.is(state)`](#is)                        | whether the machine is in `state`                  |
+| [`machine.can(target)`](#can)                     | whether `transition(target)` would be accepted now |
+| [`await machine.transition(target)`](#transition) | moves to `target`                                  |
+| [`TransitionError`](#transitionerror)             | thrown when a transition is refused                |
 
 ### Configuration
 
@@ -117,9 +117,9 @@ new StateMachine<State>({
         ready: {
             from: 'created',
             enter: async ({ from, to }) => {},
-            leave: async ({ from, to }) => {}
-        }
-    }
+            leave: async ({ from, to }) => {},
+        },
+    },
 })
 ```
 

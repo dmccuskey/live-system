@@ -7,7 +7,7 @@ function post(body: unknown, path = '/command'): Request {
     return new Request(`http://localhost${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: typeof body === 'string' ? body : JSON.stringify(body)
+        body: typeof body === 'string' ? body : JSON.stringify(body),
     })
 }
 
@@ -37,8 +37,8 @@ describe('CommandServer.handle', () => {
                 async handle(command) {
                     commands.push(command)
                     return { status: 'accepted' }
-                }
-            }
+                },
+            },
         })
 
         await server.handle(post({ route: 'a/b', data: [1, 2] }))
@@ -46,7 +46,7 @@ describe('CommandServer.handle', () => {
 
         expect(commands).toEqual([
             { route: 'a/b', data: [1, 2] },
-            { route: 'no/data', data: undefined }
+            { route: 'no/data', data: undefined },
         ])
     })
 
@@ -70,7 +70,7 @@ describe('CommandServer.handle', () => {
         expect(response.status).toBe(500)
         expect(await response.json()).toEqual({
             status: 'failed',
-            error: { name: 'CommandError', message: 'The server is busy', code: 'busy' }
+            error: { name: 'CommandError', message: 'The server is busy', code: 'busy' },
         })
     })
 
@@ -119,8 +119,8 @@ describe('CommandServer.handle', () => {
             router: {
                 async handle() {
                     throw new Error('the router is gone')
-                }
-            }
+                },
+            },
         })
         const response = await server.handle(post({ route: 'ping' }))
 
@@ -147,7 +147,7 @@ describe('CommandServer.listen', () => {
 
         const response = await fetch(`http://127.0.0.1:${server.port}/command`, {
             method: 'POST',
-            body: JSON.stringify({ route: 'server/42/restart', data: { force: false } })
+            body: JSON.stringify({ route: 'server/42/restart', data: { force: false } }),
         })
 
         expect(response.status).toBe(200)

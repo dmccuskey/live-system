@@ -81,7 +81,10 @@ describe('the users', () => {
 
         const names = (await source.find()).map(record => record.name)
 
-        expect(names.slice(USER_NAMES.length)).toEqual([`User ${USER_NAMES.length + 1}`, `User ${USER_NAMES.length + 2}`])
+        expect(names.slice(USER_NAMES.length)).toEqual([
+            `User ${USER_NAMES.length + 1}`,
+            `User ${USER_NAMES.length + 2}`,
+        ])
     })
 
     test('users/:id/remove removes the record and destroys its object', async () => {
@@ -107,7 +110,10 @@ describe('the users', () => {
     test('removing a user that does not exist is not_found', async () => {
         const { send } = await boot([user('u1', 'Alice')])
 
-        expect(await send(createRemoveUserCommand('nope'))).toMatchObject({ status: 'failed', error: { code: 'not_found' } })
+        expect(await send(createRemoveUserCommand('nope'))).toMatchObject({
+            status: 'failed',
+            error: { code: 'not_found' },
+        })
     })
 })
 

@@ -35,7 +35,7 @@ afterEach(async () => {
 })
 
 describe('the start', () => {
-    test('with no settings record, the server manager\'s is created with its defaults, and is in the store', async () => {
+    test("with no settings record, the server manager's is created with its defaults, and is in the store", async () => {
         const { source, stored } = await boot()
 
         const id = expect.any(String)
@@ -51,14 +51,14 @@ describe('the start', () => {
         expect(stored()).toEqual([manual])
     })
 
-    test('a record carries the key of the manager it is for, and its ID is the source\'s to give', async () => {
+    test("a record carries the key of the manager it is for, and its ID is the source's to give", async () => {
         const { stored } = await boot()
 
         expect(stored()[0]?.key).toBe(SETTINGS_KEYS.servers)
         expect(stored()[0]?.id).not.toBe(SETTINGS_KEYS.servers)
     })
 
-    test('settings with another key do not stand in for the server manager\'s', async () => {
+    test("settings with another key do not stand in for the server manager's", async () => {
         const other: SettingsRecord = { ...manual, id: 'x2', key: 'users' }
         const { source } = await boot([other])
 
@@ -162,7 +162,9 @@ describe('settings/:key/update', () => {
     test('the mode is changed in the data service, and the change comes back into the store', async () => {
         const { source, stored, send } = await boot([manual])
 
-        expect(await send(createUpdateSettingsCommand('servers', { scalingMode: 'automatic' }))).toEqual({ status: 'accepted' })
+        expect(await send(createUpdateSettingsCommand('servers', { scalingMode: 'automatic' }))).toEqual({
+            status: 'accepted',
+        })
 
         expect(await source.get('x1')).toEqual({ ...manual, scalingMode: 'automatic' })
         expect(stored()).toEqual([{ ...manual, scalingMode: 'automatic' }])
@@ -207,7 +209,10 @@ describe('settings/:key/update', () => {
     test('what is not a setting is left out of what is written', async () => {
         const { source, send } = await boot([manual])
 
-        await send({ route: 'settings/servers/update', data: { maxUtilization: 0.5, id: 'other', key: 'users', extra: true } })
+        await send({
+            route: 'settings/servers/update',
+            data: { maxUtilization: 0.5, id: 'other', key: 'users', extra: true },
+        })
 
         expect(await source.find()).toEqual([{ ...manual, maxUtilization: 0.5 }])
     })

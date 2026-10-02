@@ -31,7 +31,7 @@ function webApp(source = new GatedSource([{ id: 'a', name: 'first' }])) {
     const options = {
         context: undefined,
         connect: async () => void log.push('connect'),
-        disconnect: async () => void log.push('disconnect')
+        disconnect: async () => void log.push('disconnect'),
     }
     const system = new LiveSystem<unknown>(options)
     system.addManager(context => new ItemManager(context, source, store))
@@ -71,7 +71,7 @@ describe('WebStartup', () => {
         watch(
             () => startup.status.phase,
             phase => phases.push(phase),
-            { flush: 'sync' }
+            { flush: 'sync' },
         )
 
         await startup.start()

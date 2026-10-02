@@ -31,13 +31,12 @@ interface Command<T = unknown> {
 - Registering a route that already exists is an error at registration. A command with no matching route fails with a structured "not found" error ([ADR 014](014-failure-and-shutdown.md)). A literal segment takes precedence over a `:param` segment.
 - A command's response is a small object. It says that the command was accepted, or that it failed and why:
 
-  ```ts
-  type CommandResponse<R = unknown> =
-      | { status: 'accepted'; result?: R }
-      | { status: 'failed'; error: CommandError }
-  ```
+    ```ts
+    type CommandResponse<R = unknown> = { status: 'accepted'; result?: R } | { status: 'failed'; error: CommandError }
+    ```
 
-  When a command is accepted, `result` may carry what the sender needs to follow up, such as the ID of a record the command created, so the sender knows which record to watch. Progress and outcomes still reach the sender as record changes ([ADR 016](016-records-hold-live-state.md)).
+    When a command is accepted, `result` may carry what the sender needs to follow up, such as the ID of a record the command created, so the sender knows which record to watch. Progress and outcomes still reach the sender as record changes ([ADR 016](016-records-hold-live-state.md)).
+
 - The router is needed only on the server.
 
 **Events.** Events report what happened. They come from several sources, each with its own way to subscribe, and are not broadcast over one channel:

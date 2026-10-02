@@ -19,7 +19,7 @@ export abstract class DataManager<T extends HasId, C = unknown> extends BaseMana
     constructor(
         context: C,
         protected readonly source: RecordSource<T>,
-        protected readonly records: RecordStore<T>
+        protected readonly records: RecordStore<T>,
     ) {
         super(context)
     }
@@ -33,7 +33,7 @@ export abstract class DataManager<T extends HasId, C = unknown> extends BaseMana
             this.source.onCreated(record => this.#handleChange(record)),
             this.source.onUpdated(record => this.#handleChange(record)),
             this.source.onPatched(record => this.#handleChange(record)),
-            this.source.onRemoved(record => this.#handleRemoval(record))
+            this.source.onRemoved(record => this.#handleRemoval(record)),
         )
 
         const loaded = new Map<string, T>()
@@ -55,7 +55,7 @@ export abstract class DataManager<T extends HasId, C = unknown> extends BaseMana
                         // A record that cannot be fetched has been removed
                         loaded.delete(id)
                     }
-                })
+                }),
             )
         }
 

@@ -35,7 +35,7 @@ export class LiveSystem<C = unknown> {
             initManagers: () => this.#initManagers(),
             startManagers: () => this.#each(manager => manager.start()),
             runManagers: () => this.#each(manager => manager.run()),
-            stopManagers: () => this.#stopManagers()
+            stopManagers: () => this.#stopManagers(),
         })
     }
 

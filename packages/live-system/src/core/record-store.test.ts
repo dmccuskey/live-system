@@ -96,7 +96,7 @@ describe('reactivity', () => {
         const stop = watch(
             () => Object.keys(store.records),
             () => (changes += 1),
-            { flush: 'sync' }
+            { flush: 'sync' },
         )
 
         store.load([first, second])
@@ -140,7 +140,7 @@ describe('reactivity', () => {
         const stop = watch(
             () => store.get('a'),
             () => (changes += 1),
-            { flush: 'sync' }
+            { flush: 'sync' },
         )
 
         store.set({ id: 'b', name: 'renamed' })

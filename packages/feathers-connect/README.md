@@ -112,23 +112,23 @@ Delete `try.ts` when you are done.
 
 ## Reference
 
-| | |
-|---|---|
-| [`new FeathersConnection(options)`](#feathersconnection) | creates a connection, not yet connected |
-| [`await connection.connect()`](#connect) | connects to the data service |
-| [`await connection.disconnect()`](#disconnect) | closes the connection |
-| [`connection.isConnected`](#isconnected) | whether the connection is made |
-| [`connection.onConnected(listener)`, `onDisconnected(listener)`](#onconnected-and-ondisconnected) | hear the connection being made and ending |
-| [`connection.recordSource<T>(path, options?)`](#recordsource) | a record source over the service at `path` |
-| [`connection.service(path)`](#service) | the Feathers service at `path` |
-| [`FeathersRecordSource<T>`](#feathersrecordsource) | the CRUD calls and change events of one service |
+|                                                                                                   |                                                 |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| [`new FeathersConnection(options)`](#feathersconnection)                                          | creates a connection, not yet connected         |
+| [`await connection.connect()`](#connect)                                                          | connects to the data service                    |
+| [`await connection.disconnect()`](#disconnect)                                                    | closes the connection                           |
+| [`connection.isConnected`](#isconnected)                                                          | whether the connection is made                  |
+| [`connection.onConnected(listener)`, `onDisconnected(listener)`](#onconnected-and-ondisconnected) | hear the connection being made and ending       |
+| [`connection.recordSource<T>(path, options?)`](#recordsource)                                     | a record source over the service at `path`      |
+| [`connection.service(path)`](#service)                                                            | the Feathers service at `path`                  |
+| [`FeathersRecordSource<T>`](#feathersrecordsource)                                                | the CRUD calls and change events of one service |
 
 ### FeathersConnection
 
 ```ts
 new FeathersConnection({
     url: 'http://localhost:3030',
-    connectTimeout: 5000
+    connectTimeout: 5000,
 })
 ```
 
@@ -179,14 +179,14 @@ Each call returns a new record source. They share the connection.
 
 ### FeathersRecordSource
 
-| | |
-|---|---|
-| `find(): Promise<T[]>` | every record, or every record matching the fixed `query` |
-| `get(id): Promise<T>` | one record; rejects when it does not exist |
-| `create(data): Promise<T>` | creates a record; `data` may leave out `id`, and the data service then assigns one |
-| `update(id, data): Promise<T>` | replaces a record |
-| `patch(id, data): Promise<T>` | changes some fields of a record |
-| `remove(id): Promise<T>` | removes a record and returns it |
+|                                                                                            |                                                                                       |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `find(): Promise<T[]>`                                                                     | every record, or every record matching the fixed `query`                              |
+| `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                            |
+| `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one    |
+| `update(id, data): Promise<T>`                                                             | replaces a record                                                                     |
+| `patch(id, data): Promise<T>`                                                              | changes some fields of a record                                                       |
+| `remove(id): Promise<T>`                                                                   | removes a record and returns it                                                       |
 | `onCreated(listener)`, `onUpdated(listener)`, `onPatched(listener)`, `onRemoved(listener)` | hear a change, made by any client; each returns a function that ends the subscription |
 
 A call that fails rejects with Feathers' error as it arrived: a missing record gives an error with the `name` `'NotFound'` and the `code` `404`.

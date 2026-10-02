@@ -19,13 +19,14 @@ An earlier web prototype had one aggregate data manager. It wrapped every data s
 - It never writes records. It changes things only by sending commands ([ADR 007](007-data-service-source-of-truth.md)).
 - Commands are built by the application's command creators, which live in its protocol ([ADR 010](010-applications-own-protocol.md)), and sent through a small `CommandClient`, which owns the transport and the error handling and builds no application commands:
 
-  ```ts
-  await commands.send(restartServer('42', { force: false }))
-  ```
+    ```ts
+    await commands.send(restartServer('42', { force: false }))
+    ```
 
-  With one `DataManager` per data service there is no single data manager for sending to belong to, so it has an object of its own.
+    With one `DataManager` per data service there is no single data manager for sending to belong to, so it has an object of its own.
 
-  `send` resolves with the command's response when the server has accepted it, and rejects with a structured error when it failed ([ADR 014](014-failure-and-shutdown.md)). Results and progress arrive as record changes ([ADR 009](009-commands-events-crud.md)).
+    `send` resolves with the command's response when the server has accepted it, and rejects with a structured error when it failed ([ADR 014](014-failure-and-shutdown.md)). Results and progress arrive as record changes ([ADR 009](009-commands-events-crud.md)).
+
 - A web app has a startup sequence, smaller than the server's: connect to the data service, then have the data managers load into the store. The app is shown from the beginning, not at the end: it renders from the startup's status (starting, running, failed), kept as reactive state, so it can show a loading screen or the reason for a failure. Whether the connection is up after startup is a separate condition, which the application shows from its connection.
 
 Rejected:

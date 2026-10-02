@@ -135,10 +135,10 @@ The manager samples the servers once a second, in either mode: the load and the 
 
 This one value is what the page shows and what automatic scaling goes by. Scaling keeps it in a band around the maximum, from 15 points below to 5 points above:
 
-| Decision | When | Wait after a decision |
-|---|---|---|
-| Add a server | the utilization is above the band | 5 s |
-| Remove a server | the utilization is below the band, and no command waits for room | 15 s |
+| Decision        | When                                                             | Wait after a decision |
+| --------------- | ---------------------------------------------------------------- | --------------------- |
+| Add a server    | the utilization is above the band                                | 5 s                   |
+| Remove a server | the utilization is below the band, and no command waits for room | 15 s                  |
 
 The band is narrow on purpose: the demo is to move, with servers coming and going as the load does, rather than settle. With a maximum of 70% the band is 55% to 75%. With few servers a removal can push the utilization above the band and bring on an addition, at most one round every 20 s or so; the waits keep that from going faster.
 
@@ -175,13 +175,13 @@ The simulator should model user experience rather than treating server utilizati
 
 A user's frustration is a fraction from 0 to 1, kept in its record. It moves only with what becomes of the user's commands: bad outcomes add to it, and completed commands relieve it.
 
-| Outcome | Event | Effect on frustration |
-|---|---|---|
-| Refused, the user already has a command waiting | `commandRefused` with `queue_full` | adds 0.05 |
-| Waited in the queue | `commandQueued`, then `commandStarted` | adds 0.01 for each second waited, once, when a server takes the command |
-| Aborted, its server went away under it | `commandFinished` with `aborted` | adds 0.05, plus 0.15 times the fraction of its duration the command had run |
-| Completed | `commandFinished` with `completed` | multiplies it by 0.9 |
-| Dropped, the user was removed or the system stopped | `commandRefused` with `dropped` | none, and its wait counts as nothing |
+| Outcome                                             | Event                                  | Effect on frustration                                                       |
+| --------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------- |
+| Refused, the user already has a command waiting     | `commandRefused` with `queue_full`     | adds 0.05                                                                   |
+| Waited in the queue                                 | `commandQueued`, then `commandStarted` | adds 0.01 for each second waited, once, when a server takes the command     |
+| Aborted, its server went away under it              | `commandFinished` with `aborted`       | adds 0.05, plus 0.15 times the fraction of its duration the command had run |
+| Completed                                           | `commandFinished` with `completed`     | multiplies it by 0.9                                                        |
+| Dropped, the user was removed or the system stopped | `commandRefused` with `dropped`        | none, and its wait counts as nothing                                        |
 
 An abort weighs more than a refusal: the user waited and then lost the work. The longer the command had run, the more was lost.
 
@@ -272,28 +272,28 @@ UserManager, ServerManager              ServerManager ──▶ a VirtualServer
 
 **Routes are for what the Demo User changes.** There are five, each with a command creator in the protocol:
 
-| Route | Does |
-|---|---|
-| `users/add` | creates a user, with the next free name and a random profile |
-| `users/:id/remove` | removes the user |
-| `servers/add` | creates a server of 10 capacity units |
-| `servers/:id/remove` | removes the server |
+| Route                  | Does                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| `users/add`            | creates a user, with the next free name and a random profile                                          |
+| `users/:id/remove`     | removes the user                                                                                      |
+| `servers/add`          | creates a server of 10 capacity units                                                                 |
+| `servers/:id/remove`   | removes the server                                                                                    |
 | `settings/:key/update` | changes the settings of the manager the key names: the scaling mode, the maximum utilization, or both |
 
 The two server routes are refused in automatic mode.
 
 **What the virtual users generate travels over the event bus.** A user and a server never know each other, and nothing calls a manager directly. The events are defined in the protocol's `events.ts`:
 
-| Event | Emitted by | Means |
-|---|---|---|
-| `commandRequested` | a `VirtualUser` | the user wants a command run. It carries the command's ID, the user's ID and the type |
-| `commandQueued` | the `ServerManager` | the command waits in the queue |
-| `commandStarted` | the `VirtualServer` that took it | the command is running, and on which server |
-| `commandRefused` | the `ServerManager` | the command will not be run, and why: `queue_full` when its user already has one waiting, `dropped` when it was waiting as its user was removed or the system stopped |
-| `commandFinished` | the `VirtualServer` | the command left its server: `completed` after its duration, or `aborted` because the server was removed or the system stopped |
-| `userRemoved` | the `UserManager` | a user is gone, so whatever of its waits can be dropped |
-| `servers.queueChanged` | the `ServerManager` | the number of commands that wait has changed, or how many of them wait for room |
-| `servers.utilizationChanged` | the `ServerManager` | the average utilization of the servers as a whole has changed |
+| Event                        | Emitted by                       | Means                                                                                                                                                                 |
+| ---------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commandRequested`           | a `VirtualUser`                  | the user wants a command run. It carries the command's ID, the user's ID and the type                                                                                 |
+| `commandQueued`              | the `ServerManager`              | the command waits in the queue                                                                                                                                        |
+| `commandStarted`             | the `VirtualServer` that took it | the command is running, and on which server                                                                                                                           |
+| `commandRefused`             | the `ServerManager`              | the command will not be run, and why: `queue_full` when its user already has one waiting, `dropped` when it was waiting as its user was removed or the system stopped |
+| `commandFinished`            | the `VirtualServer`              | the command left its server: `completed` after its duration, or `aborted` because the server was removed or the system stopped                                        |
+| `userRemoved`                | the `UserManager`                | a user is gone, so whatever of its waits can be dropped                                                                                                               |
+| `servers.queueChanged`       | the `ServerManager`              | the number of commands that wait has changed, or how many of them wait for room                                                                                       |
+| `servers.utilizationChanged` | the `ServerManager`              | the average utilization of the servers as a whole has changed                                                                                                         |
 
 An event that reports a manager's own status is named after the manager, as the last two are, so that another manager's status can be told apart from it.
 
@@ -334,10 +334,10 @@ The order is strict: a command that waits for room keeps everything behind it wa
 
 Each user has two limits:
 
-| Limit | Value | Beyond it |
-|---|---|---|
-| Commands running at once | 3 | the next one waits in the queue, until one of the user's own finishes |
-| Commands waiting in the queue | 1 | the next one is refused |
+| Limit                         | Value | Beyond it                                                             |
+| ----------------------------- | ----- | --------------------------------------------------------------------- |
+| Commands running at once      | 3     | the next one waits in the queue, until one of the user's own finishes |
+| Commands waiting in the queue | 1     | the next one is refused                                               |
 
 A user refused once and refused again on every retry would never be served. The one place in the queue rules this out, and the queue is never longer than the number of users.
 
@@ -349,11 +349,11 @@ A `VirtualServer` keeps its active commands in memory and holds a timer for each
 
 The command types, with placeholder values to be tuned once the demo runs:
 
-| Type | Cost | Duration |
-|---|---|---|
-| search | 1 unit | 2 s |
-| standard | 2 units | 5 s |
-| agentic | 4 units | 15 s |
+| Type     | Cost    | Duration |
+| -------- | ------- | -------- |
+| search   | 1 unit  | 2 s      |
+| standard | 2 units | 5 s      |
+| agentic  | 4 units | 15 s     |
 
 ### A First Start
 
@@ -422,11 +422,11 @@ A component reads the stores and sends commands, and nothing else. It changes no
 
 The page is mounted at once and renders from three things ([Starting a Web App](architecture.md#starting-a-web-app)):
 
-| What | Shown as |
-|---|---|
-| System status | a loading line while starting, the reason when the startup failed, the panels when running |
-| Connection status | a warning above the panels while the data service is not connected |
-| Records | the panels: a card per user and per server, the mode and the maximum utilization from the settings record, the utilization and the command queue from the status record, as the commands that wait for their own user and those that wait for capacity |
+| What              | Shown as                                                                                                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| System status     | a loading line while starting, the reason when the startup failed, the panels when running                                                                                                                                                             |
+| Connection status | a warning above the panels while the data service is not connected                                                                                                                                                                                     |
+| Records           | the panels: a card per user and per server, the mode and the maximum utilization from the settings record, the utilization and the command queue from the status record, as the commands that wait for their own user and those that wait for capacity |
 
 The utilization jumps with every command that starts or ends, so the status record holds its average over 10 seconds, which the live server keeps and automatic scaling goes by ([Automatic](#automatic)). The page shows it as it is: every browser sees the same value. In automatic mode it is shown in red while it is above the maximum utilization.
 

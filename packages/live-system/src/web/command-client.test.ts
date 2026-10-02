@@ -22,7 +22,7 @@ function stubbed(answer: () => Response | Promise<Response>) {
         fetch: async (url, init) => {
             requests.push({ url, init })
             return answer()
-        }
+        },
     })
 
     return { client, requests }
@@ -53,7 +53,7 @@ describe('CommandClient with a CommandServer', () => {
     test('resolves with the accepted response and its result', async () => {
         const response = await client().send<{ id: string; force: boolean }>({
             route: 'server/42/restart',
-            data: { force: true }
+            data: { force: true },
         })
 
         expect(response).toEqual({ status: 'accepted', result: { id: '42', force: true } })
@@ -111,7 +111,7 @@ describe('CommandClient.send', () => {
         expect(new Headers(requests[0]!.init.headers).get('Content-Type')).toBe('application/json')
         expect(JSON.parse(requests[0]!.init.body as string)).toEqual({
             route: 'server/42/restart',
-            data: { force: false }
+            data: { force: false },
         })
     })
 
@@ -157,7 +157,7 @@ describe('CommandClient.send', () => {
         ['another shape', { ok: true }],
         ['an unknown status', { status: 'pending' }],
         ['a failure without an error', { status: 'failed' }],
-        ['a failure with a partial error', { status: 'failed', error: { message: 'No' } }]
+        ['a failure with a partial error', { status: 'failed', error: { message: 'No' } }],
     ])('rejects with bad_response when the answer is %s', async (_name, body) => {
         const { client } = stubbed(() => Response.json(body))
 

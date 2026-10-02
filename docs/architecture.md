@@ -110,7 +110,7 @@ const system = new LiveSystem<AppContext>({
     context: { events, pinia },
     router,
     connect: () => connection.open(),
-    disconnect: () => connection.close()
+    disconnect: () => connection.close(),
 })
 
 system.addManager(context => new UserManager(context, userSource, useUsers(context.pinia)))
@@ -347,9 +347,7 @@ BaseManager
 
 ```ts
 abstract class BaseManager<C = unknown> {
-    constructor(
-        protected readonly context: C
-    ) {}
+    constructor(protected readonly context: C) {}
 
     routes(): Routes {
         return {}
@@ -364,11 +362,11 @@ abstract class BaseManager<C = unknown> {
 
 Each phase has its work, and keeping to it is what makes the order of the managers irrelevant:
 
-| Phase | What a manager and its live objects do |
-|---|---|
-| `init()` | read their own records from the data store and rebuild their objects from them |
-| `start()` | begin to watch what is within the system: the event bus, the stores |
-| `run()` | begin to act, and to communicate with the outside world, for example a stock market API |
+| Phase     | What a manager and its live objects do                                                  |
+| --------- | --------------------------------------------------------------------------------------- |
+| `init()`  | read their own records from the data store and rebuild their objects from them          |
+| `start()` | begin to watch what is within the system: the event bus, the stores                     |
+| `run()`   | begin to act, and to communicate with the outside world, for example a stock market API |
 
 Every manager has finished a phase before any begins the next. So a manager that announces something in `run()` is heard by every manager that began to listen in `start()`, whichever was added first.
 
@@ -391,7 +389,7 @@ The router is not in the context. A manager declares the commands it handles, an
 class ServerManager extends LiveObjectManager<VirtualServerRecord, VirtualServer, AppContext> {
     routes() {
         return {
-            'server/:id/restart': this.restart
+            'server/:id/restart': this.restart,
         }
     }
 }
@@ -425,7 +423,7 @@ abstract class DataManager<T extends { id: string }, C = unknown> extends BaseMa
     constructor(
         context: C,
         protected readonly source: RecordSource<T>,
-        protected readonly records: RecordStore<T>
+        protected readonly records: RecordStore<T>,
     ) {
         super(context)
     }
@@ -642,8 +640,8 @@ const useServers = defineRecordStore<VirtualServerRecord>('servers')
 
 const servers = useServers(pinia)
 
-servers.records         // every record, by ID
-servers.get('42')       // one record, or undefined
+servers.records // every record, by ID
+servers.get('42') // one record, or undefined
 ```
 
 Only the `DataManager` for those records writes to the store. Everything else reads, and what reads inside a `computed` or a `watch` reacts when the record is replaced. A record is replaced whole when it changes, never changed in place.
@@ -702,8 +700,8 @@ router.handle({
 
     data: {
         branch: 'feature/foo',
-        force: false
-    }
+        force: false,
+    },
 })
 ```
 
@@ -728,13 +726,13 @@ const response = await router.handle({ route: 'server/42/restart', data: { force
 - Registering a route that already exists throws. Two patterns that differ only in their parameter names are the same route.
 - `handle()` never rejects. It resolves with a `CommandResponse`:
 
-  ```ts
-  type CommandResponse<R = unknown> =
-      | { status: 'accepted'; result?: R }
-      | { status: 'failed'; error: { name: string; message: string; code: string } }
-  ```
+    ```ts
+    type CommandResponse<R = unknown> =
+        | { status: 'accepted'; result?: R }
+        | { status: 'failed'; error: { name: string; message: string; code: string } }
+    ```
 
-  An unknown route fails with the code `not_found`. A handler chooses its own code by throwing a `CommandError`; anything else it throws is reported with the code `internal`.
+    An unknown route fails with the code `not_found`. A handler chooses its own code by throwing a `CommandError`; anything else it throws is reported with the code `internal`.
 
 `fillRoute('server/:id/restart', { id: '42' })` builds a route from its pattern, for an application's command creators. It throws on a missing parameter.
 
@@ -790,12 +788,12 @@ This distinction allows independent components to communicate without requiring 
 
 There is no single channel that carries every event. Events come from several sources, each with its own way to subscribe:
 
-| Source | What it reports | Example |
-|---|---|---|
-| Record source | a record of one kind was created, updated, patched, or removed | a `VirtualServerRecord` was patched |
-| Reactive state | a value in the local reactive state changed | the number of servers changed |
-| Event bus | a domain event, published by one part of the application for others | `server.overloaded` |
-| Lifecycle | the system moved to another lifecycle state | the system reached `RUNNING` |
+| Source         | What it reports                                                     | Example                             |
+| -------------- | ------------------------------------------------------------------- | ----------------------------------- |
+| Record source  | a record of one kind was created, updated, patched, or removed      | a `VirtualServerRecord` was patched |
+| Reactive state | a value in the local reactive state changed                         | the number of servers changed       |
+| Event bus      | a domain event, published by one part of the application for others | `server.overloaded`                 |
+| Lifecycle      | the system moved to another lifecycle state                         | the system reached `RUNNING`        |
 
 Conceptually:
 
@@ -806,9 +804,12 @@ source.onPatched(record => {
 })
 
 // Reactive state: a change to a value
-watch(() => state.servers.length, count => {
-    this.handleServerCount(count)
-})
+watch(
+    () => state.servers.length,
+    count => {
+        this.handleServerCount(count)
+    },
+)
 
 // Event bus: a domain event
 events.on('server.overloaded', event => {
@@ -952,11 +953,11 @@ live-system/
 
 `live-system` is one package with three entry points:
 
-| Entry point | Holds |
-|---|---|
-| `core` | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the record store, the optional event bus |
-| `server` | the router and the `CommandServer`, which turns an HTTP request into a command |
-| `web` | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status |
+| Entry point | Holds                                                                                                                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core`      | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the record store, the optional event bus |
+| `server`    | the router and the `CommandServer`, which turns an HTTP request into a command                                                                             |
+| `web`       | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status                                                                  |
 
 `micro-fsm` and `feathers-connect` start in this workspace and are built to move to repositories of their own.
 
@@ -1006,11 +1007,11 @@ A web app's system is a `LiveSystem` without a router. Booting it connects to th
 
 The app does not wait for that to be shown. It is mounted at once and renders from what it knows, which is three separate things:
 
-| What | Says | Comes from |
-|---|---|---|
-| System status | `created`, `starting`, `running`, `failed` (with the error) or `stopped` | `WebStartup`, in `live-system/web` |
-| Connection status | whether the data service is connected, after startup as well | the application, from its connection |
-| Record state | what a record's own fields say, such as a server that is starting | the application's records, in the store |
+| What              | Says                                                                     | Comes from                              |
+| ----------------- | ------------------------------------------------------------------------ | --------------------------------------- |
+| System status     | `created`, `starting`, `running`, `failed` (with the error) or `stopped` | `WebStartup`, in `live-system/web`      |
+| Connection status | whether the data service is connected, after startup as well             | the application, from its connection    |
+| Record state      | what a record's own fields say, such as a server that is starting        | the application's records, in the store |
 
 `WebStartup` boots the system and keeps the system status as reactive state:
 

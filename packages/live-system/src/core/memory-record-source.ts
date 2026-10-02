@@ -15,7 +15,7 @@ export class MemoryRecordSource<T extends HasId> implements RecordSource<T> {
         created: new Set(),
         updated: new Set(),
         patched: new Set(),
-        removed: new Set()
+        removed: new Set(),
     }
 
     constructor(records: T[] = []) {

@@ -18,7 +18,7 @@ Three small parts, each with one responsibility:
 
 ```ts
 const system = new LiveSystem<AppContext>({
-    context: { events, store }
+    context: { events, store },
 })
 
 system.addManager(context => new UserManager(context, userSource))
