@@ -4,7 +4,7 @@ LiveSystem is at the design stage. The design is in [Architecture](architecture.
 
 ## Current Baseline
 
-The repository is a [Bun](https://bun.sh) workspace with every package in place and nothing implemented. Each package is an empty shell with a test that proves it loads and resolves the packages it depends on.
+The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)). Every other package is an empty shell with a test that proves it loads and resolves the packages it depends on.
 
 | Package | Folder | Depends on |
 |---|---|---|
