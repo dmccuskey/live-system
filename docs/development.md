@@ -4,7 +4,7 @@ LiveSystem is at the design stage. The design is in [Architecture](architecture.
 
 ## Current Baseline
 
-The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)), and in `live-system/core` so are the `LifecycleRunner` ([Architecture](architecture.md#lifecyclerunner)), the `LiveSystem` class that boots and shuts down its managers ([Architecture](architecture.md#the-livesystem-object)), `BaseManager`, `LiveObject` and the `Unsubscribe` type. There is no router yet, so a manager's `routes()` are declared but not registered, and the `Routes` type is a placeholder. The rest of `live-system` and every other package is an empty shell with a test that proves it loads and resolves the packages it depends on.
+The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)), and in `live-system/core` so are the `LifecycleRunner` ([Architecture](architecture.md#lifecyclerunner)), the `LiveSystem` class that boots and shuts down its managers ([Architecture](architecture.md#the-livesystem-object)), `BaseManager`, `LiveObject`, the `Unsubscribe` type and the optional `EventBus` ([Architecture](architecture.md#the-event-bus)). There is no router yet, so a manager's `routes()` are declared but not registered, and the `Routes` type is a placeholder. The rest of `live-system` and every other package is an empty shell with a test that proves it loads and resolves the packages it depends on.
 
 | Package | Folder | Depends on |
 |---|---|---|

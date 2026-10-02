@@ -1,6 +1,6 @@
 # LiveSystem Documentation
 
-New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the design stage: the workspace is scaffolded and only the state machine, the lifecycle runner and the `LiveSystem`, `BaseManager` and `LiveObject` classes are implemented, so these pages mostly describe what will be built.
+New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the design stage: the workspace is scaffolded and only the state machine, the lifecycle runner and the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes are implemented, so these pages mostly describe what will be built.
 
 ## Internals
 

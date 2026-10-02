@@ -362,7 +362,7 @@ A manager receives as little as possible. The context holds only what every mana
 
 ```ts
 interface AppContext {
-    events: EventBus
+    events: EventBus<AppEvents>
     store: Store
 }
 ```
@@ -709,6 +709,32 @@ pipeline.completed
 ```
 
 An application whose record changes and reactive state already say everything needs no event bus.
+
+### The Event Bus
+
+`EventBus<E>` is typed by the application's own event map, from an event's name to its payload:
+
+```ts
+interface AppEvents {
+    'server.overloaded': { serverId: string; load: number }
+    'server.drained': { serverId: string }
+    'system.idle': void
+}
+
+const events = new EventBus<AppEvents>()
+
+const unsubscribe = events.on('server.overloaded', event => { ... })
+events.once('server.drained', event => { ... })
+
+events.emit('server.overloaded', { serverId: '42', load: 0.9 })
+events.emit('system.idle')
+```
+
+- `on` and `once` return an `Unsubscribe` function, the only way to end a subscription ("Event and Subscription Cleanup").
+- Delivery is synchronous, in the order the listeners subscribed. A listener added or removed during delivery takes effect from the next event.
+- A listener that throws stops neither the other listeners nor the emitter. The error goes to the `onError` option, which logs with `console.error` by default. An async listener is not awaited, and its rejection goes to `onError` too.
+- `listenerCount(name)` lets a test show that a manager or a live object released its listeners.
+- There are no wildcards, no `clear()` and no history of past events.
 
 The lifecycle is a lesser source: most parts learn about lifecycle changes through their own `init()`, `start()`, `run()`, and `stop()` methods rather than by subscribing.
 
