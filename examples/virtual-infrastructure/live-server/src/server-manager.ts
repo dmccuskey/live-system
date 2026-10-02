@@ -40,7 +40,8 @@ const serverNumber = (name: string | undefined): number => Number(/(\d+)$/.exec(
  * the settings store for the record with its key. In manual mode it is the Demo User, through the
  * routes. In automatic mode the routes are refused, and the manager adds a
  * server when the average utilization is above the maximum, and removes one
- * when the others would do. The average is the `ScalingPolicy`'s: the manager
+ * when the others would do. It keeps no more than `MAX_SERVERS`: those beyond,
+ * which manual mode may have left, are removed or drained. The average is the `ScalingPolicy`'s: the manager
  * samples the load in either mode, and announces the average for the UI to show. The `SettingsManager` sees to it that the record is
  * there. Should it be missing all the same, the defaults are in force.
  */
@@ -364,12 +365,20 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
 
         if (this.#settings.scalingMode !== 'automatic') return
 
+        // More servers than automatic mode keeps, as manual mode may leave them: the limit comes first
+        if (servers.length > MAX_SERVERS) {
+            this.#retireExtra(servers)
+            return
+        }
+
         if (decision === 'up') this.#scaleUp()
         if (decision === 'down') this.#scaleDown(servers)
     }
 
-    // A server that drains is taken back before a new one is added
+    // A server that drains is taken back before a new one is added. At the most servers, neither.
     #scaleUp(): void {
+        if (this.#available().length >= MAX_SERVERS) return
+
         const draining = [...this.objects.values()].find(
             server => server.isDraining && !server.isDestroyed && !this.#removing.has(server.id),
         )
@@ -395,11 +404,23 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
 
         if (isLeaving || servers.length <= MIN_SERVERS) return
 
-        // The least loaded first, and of those the newest
-        const [server] = servers.toSorted((a, b) => a.load - b.load || this.#numberOf(b) - this.#numberOf(a))
+        const [server] = this.#leastLoaded(servers)
 
-        if (!server) return
+        if (server) this.#retire(server)
+    }
 
+    // The servers beyond the most leave together, by the same choice as in scaling down
+    #retireExtra(servers: VirtualServer[]): void {
+        for (const server of this.#leastLoaded(servers).slice(0, servers.length - MAX_SERVERS)) this.#retire(server)
+    }
+
+    // The least loaded first, and of those the newest
+    #leastLoaded(servers: VirtualServer[]): VirtualServer[] {
+        return servers.toSorted((a, b) => a.load - b.load || this.#numberOf(b) - this.#numberOf(a))
+    }
+
+    // An idle server is removed at once. A busy one is drained, and removed when its last command ends.
+    #retire(server: VirtualServer): void {
         if (server.activeCommands === 0) {
             this.#remove(server.id)
         } else {

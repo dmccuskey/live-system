@@ -1,19 +1,26 @@
 <script setup lang="ts">
 // What the ServerManager reports of itself, from its status record.
 import { UTILIZATION_WINDOW } from '@virtual-infrastructure/protocol/servers/servers.constants'
-import { useServerStatus } from '../composables/records.ts'
+import { computed } from 'vue'
+import { useServerSettings, useServerStatus } from '../composables/records.ts'
 import { percent } from '../format.ts'
 
 // The utilization in the record is the live server's average, the one automatic scaling goes by
 const status = useServerStatus()
 const seconds = Math.round(UTILIZATION_WINDOW / 1_000)
+
+// Above the maximum that automatic scaling is set to keep
+const settings = useServerSettings()
+const isOver = computed(
+    () => settings.value.scalingMode === 'automatic' && status.value.utilization > settings.value.maxUtilization,
+)
 </script>
 
 <template>
     <dl class="status">
         <div>
             <dt>Utilization, {{ seconds }} s average</dt>
-            <dd data-test="utilization">{{ percent(status.utilization) }}</dd>
+            <dd data-test="utilization" :class="{ over: isOver }">{{ percent(status.utilization) }}</dd>
         </div>
         <div>
             <dt>Command queue</dt>
@@ -43,6 +50,10 @@ dd {
     margin: 0;
     font-size: 1.2rem;
     font-weight: 600;
+}
+
+.over {
+    color: var(--high);
 }
 
 .reason {

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mount } from '@vue/test-utils'
 import { createAddUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
 import { nextTick } from 'vue'
-import { useStatusStore } from '../stores.ts'
+import { useSettingsStore, useStatusStore } from '../stores.ts'
 import { createTestApp, until } from '../test-support.ts'
 import App from './App.vue'
 import SystemStatus from './SystemStatus.vue'
@@ -166,6 +166,30 @@ describe('SystemStatus', () => {
         await nextTick()
 
         expect(text(wrapper, 'utilization')).toBe('40%')
+
+        wrapper.unmount()
+    })
+
+    test('marks the utilization when it is above the maximum of automatic mode', async () => {
+        const { pinia, global } = createTestApp()
+        const status = useStatusStore(pinia)
+        const settings = useSettingsStore(pinia)
+
+        settings.set({ id: 's', key: 'servers', scalingMode: 'automatic', maxUtilization: 0.7 })
+        status.load([{ id: 'x', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.7 }])
+
+        const wrapper = mount(SystemStatus, { global })
+        const classes = () => wrapper.get('[data-test="utilization"]').classes()
+
+        expect(classes()).not.toContain('over')
+
+        status.set({ id: 'x', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.71 })
+        await nextTick()
+        expect(classes()).toContain('over')
+
+        settings.set({ id: 's', key: 'servers', scalingMode: 'manual', maxUtilization: 0.7 })
+        await nextTick()
+        expect(classes()).not.toContain('over')
 
         wrapper.unmount()
     })

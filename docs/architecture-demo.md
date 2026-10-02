@@ -144,7 +144,7 @@ The band is narrow on purpose: the demo is to move, with servers coming and goin
 
 Commands that wait for room are demand, because the load stops at the capacity and the queue is what shows demand beyond it. The decision goes by the demand beyond the capacity too, though the utilization shown stops at 100%, so that a maximum of 95% still adds servers. A command that waits for its own user's running commands is not counted: a further server would not start it.
 
-A change to automatic mode counts as a decision: the first one waits its time. Automatic scaling keeps from 1 to 8 servers.
+A change to automatic mode counts as a decision: the first one waits its time. Automatic scaling keeps from 1 to 8 servers. Manual mode has no such limit, so a change to automatic mode may find more: at the next sample those beyond 8 leave together, the least loaded first, each removed if idle and drained if not.
 
 Scaling down aborts nothing. An idle server is removed at once, the newest first. With none idle, the least loaded server is drained: it takes no new command, and is removed when its last one ends. Only one server leaves at a time. If more capacity is needed while a server drains, that server is taken back instead of a new one being added.
 
@@ -428,7 +428,7 @@ The page is mounted at once and renders from three things ([Starting a Web App](
 | Connection status | a warning above the panels while the data service is not connected |
 | Records | the panels: a card per user and per server, the mode and the maximum utilization from the settings record, the utilization and the command queue from the status record, as the commands that wait for their own user and those that wait for capacity |
 
-The utilization jumps with every command that starts or ends, so the status record holds its average over 10 seconds, which the live server keeps and automatic scaling goes by ([Automatic](#automatic)). The page shows it as it is: every browser sees the same value.
+The utilization jumps with every command that starts or ends, so the status record holds its average over 10 seconds, which the live server keeps and automatic scaling goes by ([Automatic](#automatic)). The page shows it as it is: every browser sees the same value. In automatic mode it is shown in red while it is above the maximum utilization.
 
 A user's frustration bar is green below 25%, yellow below 50%, orange below 75% and red from there on.
 

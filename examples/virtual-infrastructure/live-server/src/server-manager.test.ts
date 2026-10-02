@@ -715,6 +715,62 @@ describe('scaling up', () => {
     })
 })
 
+describe('more servers than automatic mode keeps', () => {
+    const many = (count: number) => Array.from({ length: count }, (_, index) => server(`s${index + 1}`))
+
+    test('the idle ones beyond the most are removed, the newest first', async () => {
+        const stub = stubPolicy()
+        const { manager, context, source } = await boot(many(MAX_SERVERS + 2), stub.policy)
+
+        announce(context)
+        await stub.sampled()
+        await until(() => manager.objects.size === MAX_SERVERS)
+
+        expect(await ids(source)).toEqual(many(MAX_SERVERS).map(record => record.id))
+    })
+
+    test('a busy one is drained, and nothing is aborted', async () => {
+        const stub = stubPolicy()
+        const { manager, context, request } = await boot(many(MAX_SERVERS + 1), stub.policy)
+        const events = finishedEvents(context)
+
+        for (let count = 0; count <= MAX_SERVERS; count++) request('agentic', `u${count}`)
+        announce(context)
+        await stub.sampled()
+
+        expect([...manager.objects.values()].filter(object => object.isDraining).map(object => object.id)).toEqual([
+            `s${MAX_SERVERS + 1}`,
+        ])
+
+        await until(() => manager.objects.size === MAX_SERVERS)
+
+        expect(events.map(event => event.outcome)).not.toContain('aborted')
+    })
+
+    test('scaling up does not take a draining server back beyond the most', async () => {
+        const stub = stubPolicy()
+        const { manager, context, request } = await boot(many(MAX_SERVERS + 1), stub.policy)
+
+        for (let count = 0; count <= MAX_SERVERS; count++) request('agentic', `u${count}`)
+        announce(context)
+        await stub.sampled()
+        stub.decisions.push('up')
+        await stub.sampled()
+
+        expect(manager.getObject(`s${MAX_SERVERS + 1}`)?.isDraining).toBe(true)
+    })
+
+    test('in manual mode they stay', async () => {
+        const stub = stubPolicy()
+        const { source } = await boot(many(MAX_SERVERS + 2), stub.policy)
+
+        await stub.sampled()
+        await aWhile()
+
+        expect(await ids(source)).toHaveLength(MAX_SERVERS + 2)
+    })
+})
+
 describe('scaling down', () => {
     test('an idle server is removed, the newest first', async () => {
         const stub = stubPolicy()
