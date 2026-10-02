@@ -1,7 +1,7 @@
 // LiveSystem: the one object that holds the parts of a running system.
 import { LifecycleRunner } from './lifecycle.ts'
 import type { LifecycleState } from './lifecycle.ts'
-import type { BaseManager } from './manager.ts'
+import type { BaseManager, RouteRegistry } from './manager.ts'
 
 export interface LiveSystemOptions<C> {
     /** The one object every manager shares. Its contents are the application's choice. */
@@ -10,6 +10,8 @@ export interface LiveSystemOptions<C> {
     connect?: () => void | Promise<void>
     /** Closes what `connect` opened, after the managers have stopped. */
     disconnect?: () => void | Promise<void>
+    /** Where the managers' routes are registered: on a server, its router. Without one, routes are not registered. */
+    router?: RouteRegistry
 }
 
 /**
@@ -43,6 +45,7 @@ export class LiveSystem<C = unknown> {
 
     /**
      * Creates a manager with the shared context and adds it to the system.
+     * Its routes are registered with the system's router, when it has one.
      * Managers are initialized, started and run in the order they are added,
      * and stopped in the reverse.
      */
@@ -52,8 +55,8 @@ export class LiveSystem<C = unknown> {
         }
 
         const manager = factory(this.#options.context)
+        this.#registerRoutes(manager)
         this.#managers.push(manager)
-        // The manager's routes() are registered here once there is a router
 
         return manager
     }
@@ -100,10 +103,28 @@ export class LiveSystem<C = unknown> {
         try {
             await this.#lifecycle.stop()
         } finally {
+            for (const manager of this.#managers) {
+                this.#options.router?.removeManager(manager)
+            }
             if (this.#connected) {
                 this.#connected = false
                 await this.#options.disconnect?.()
             }
+        }
+    }
+
+    // A manager whose routes cannot all be registered is not added, and leaves none behind
+    #registerRoutes(manager: BaseManager<C>): void {
+        const router = this.#options.router
+        if (!router) return
+
+        try {
+            for (const [pattern, handler] of Object.entries(manager.routes())) {
+                router.register(pattern, handler, manager)
+            }
+        } catch (error) {
+            router.removeManager(manager)
+            throw error
         }
     }
 

@@ -1,10 +1,28 @@
 // BaseManager: the lifecycle hooks, the shared context and the routes a manager declares.
 
-/** A command handler, as a manager declares it. A placeholder until the router fixes its shape. */
-export type RouteHandler = (...args: never[]) => unknown
+/** The values of a route's `:param` segments, by name. */
+export type RouteParams = Record<string, string>
 
-/** The commands a manager handles, by route pattern. */
+/**
+ * A command handler, as a manager declares it. What it returns, awaited, is the
+ * command's result. `data` is `any` so that a handler can declare the payload it
+ * expects, until payloads are typed by route.
+ */
+export type RouteHandler = (params: RouteParams, data: any) => unknown
+
+/** The commands a manager handles, by route pattern (`server/:id/restart`). */
 export type Routes = Record<string, RouteHandler>
+
+/**
+ * Where a system registers its managers' routes. The router of `live-system/server`
+ * is one. It is an interface here so that the core does not depend on the server code.
+ */
+export interface RouteRegistry {
+    /** Adds a route. The handler is called with `manager` as `this`. Throws on a route that already exists. */
+    register(pattern: string, handler: RouteHandler, manager: object): void
+    /** Removes every route registered for the manager. */
+    removeManager(manager: object): void
+}
 
 /**
  * The base of every manager. `C` is the application's context, the one object
