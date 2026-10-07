@@ -119,6 +119,7 @@ Delete `try.ts` when you are done.
 | [`await connection.disconnect()`](#disconnect)                                                    | closes the connection                           |
 | [`connection.isConnected`](#isconnected)                                                          | whether the connection is made                  |
 | [`connection.onConnected(listener)`, `onDisconnected(listener)`](#onconnected-and-ondisconnected) | hear the connection being made and ending       |
+| [`connection.onReconnected(listener)`](#onreconnected)                                            | hear the connection being made again            |
 | [`connection.recordSource<T>(path, options?)`](#recordsource)                                     | a record source over the service at `path`      |
 | [`connection.service(path)`](#service)                                                            | the Feathers service at `path`                  |
 | [`FeathersRecordSource<T>`](#feathersrecordsource)                                                | the CRUD calls and change events of one service |
@@ -157,7 +158,15 @@ const unsubscribe = connection.onDisconnected(() => console.log('lost the data s
 
 `onConnected` is called each time the connection is made, including when socket.io brings a lost connection back. `onDisconnected` is called each time it ends, whether lost or closed. Each returns a function that ends the subscription.
 
-Changes made while the connection was lost are not replayed: after `onConnected`, records read earlier may be out of date.
+### onReconnected
+
+```ts
+const unsubscribe = connection.onReconnected(() => console.log('the data service is back'))
+```
+
+Called each time the connection is made after the first: when socket.io brings a lost connection back, and on `connect()` after `disconnect()`. It is called after the `onConnected` listeners.
+
+Changes made while the connection was away are not replayed, so records read earlier may be out of date: read them again here. A record source of the connection passes this on as its own `onReconnected`, which is what a LiveSystem `DataManager` listens to.
 
 ### recordSource
 
@@ -179,15 +188,16 @@ Each call returns a new record source. They share the connection.
 
 ### FeathersRecordSource
 
-|                                                                                            |                                                                                       |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `find(): Promise<T[]>`                                                                     | every record, or every record matching the fixed `query`                              |
-| `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                            |
-| `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one    |
-| `update(id, data): Promise<T>`                                                             | replaces a record                                                                     |
-| `patch(id, data): Promise<T>`                                                              | changes some fields of a record                                                       |
-| `remove(id): Promise<T>`                                                                   | removes a record and returns it                                                       |
-| `onCreated(listener)`, `onUpdated(listener)`, `onPatched(listener)`, `onRemoved(listener)` | hear a change, made by any client; each returns a function that ends the subscription |
+|                                                                                            |                                                                                             |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `find(): Promise<T[]>`                                                                     | every record, or every record matching the fixed `query`                                    |
+| `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                                  |
+| `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one          |
+| `update(id, data): Promise<T>`                                                             | replaces a record                                                                           |
+| `patch(id, data): Promise<T>`                                                              | changes some fields of a record                                                             |
+| `remove(id): Promise<T>`                                                                   | removes a record and returns it                                                             |
+| `onCreated(listener)`, `onUpdated(listener)`, `onPatched(listener)`, `onRemoved(listener)` | hear a change, made by any client; each returns a function that ends the subscription       |
+| `onReconnected(listener)`                                                                  | hear the connection being made again after it was lost, see [onReconnected](#onreconnected) |
 
 A call that fails rejects with Feathers' error as it arrived: a missing record gives an error with the `name` `'NotFound'` and the `code` `404`.
 
@@ -198,6 +208,8 @@ A record source can also be made directly, over any object with the Feathers ser
 ```ts
 new FeathersRecordSource<Message>(service, { idField: '_id' })
 ```
+
+Made this way it has no connection to hear from, so its `onReconnected` listeners are never called unless the `onReconnected` option says how to subscribe.
 
 ## License
 

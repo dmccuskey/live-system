@@ -30,4 +30,4 @@ Rejected:
 - The cost is one extra `get` per record that changed during the load, which is normally few.
 - The store receives the initial data as one change, so anything watching it reacts once.
 - `RecordSource` must offer `get(id)` ([ADR 006](006-record-source-boundary.md)).
-- A connection lost after startup is not covered here. Changes made while disconnected would be missed, and the same sequence would have to run again on reconnecting. That is not designed yet.
+- A connection lost after startup is not covered here. Changes made while disconnected would be missed, and the same sequence would have to run again on reconnecting. [ADR 017](017-resync-on-reconnect.md) decides that.

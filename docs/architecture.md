@@ -441,10 +441,13 @@ abstract class DataManager<T extends { id: string }, C = unknown> extends BaseMa
     protected recordAdded(record: T): void {}
     protected recordChanged(record: T, previous: T): void {}
     protected recordRemoved(record: T): void {}
+    protected resyncFailed(error: unknown): void {}
 }
 ```
 
-A `DataManager` loads its records during `init()` and keeps the store current from the record source's change events. The three hooks tell a subclass what happened, each after the store has changed. To change a record, a manager calls its record source (`this.source.patch(id, data)`); the store changes when the event comes back.
+A `DataManager` loads its records during `init()` and keeps the store current from the record source's change events. The three record hooks tell a subclass what happened, each after the store has changed. To change a record, a manager calls its record source (`this.source.patch(id, data)`); the store changes when the event comes back.
+
+When its record source reports that it was lost and is reached again, a `DataManager` fetches every record again and applies only what differs: a record added, changed or removed meanwhile gets its hook, and a record that is equal keeps its object in the store, so nothing watching it reacts. If that sync fails, the store keeps what it holds and `resyncFailed` is called, which logs with `console.error` by default ([ADR 017](decisions/017-resync-on-reconnect.md)).
 
 A manager whose records each have a live object extends `LiveObjectManager<T, O>`, which is a `DataManager<T>` that also creates, starts and destroys the objects (see [Object Ownership](#object-ownership)). A web app's managers only mirror records, so they extend `DataManager<T>`.
 
@@ -615,10 +618,14 @@ interface RecordSource<T extends { id: string }> {
     onUpdated(listener: (record: T) => void): Unsubscribe
     onPatched(listener: (record: T) => void): Unsubscribe
     onRemoved(listener: (record: T) => void): Unsubscribe
+
+    onReconnected(listener: () => void): Unsubscribe
 }
 ```
 
 A record has a string `id`. A record to create may leave it out, and the source then assigns one, as Feathers does.
+
+`onReconnected` is called when the source was lost and is reached again, never for the first connection. Change events may have been missed meanwhile, so whatever loaded records from the source fetches them again.
 
 The implementation can vary:
 
@@ -631,13 +638,13 @@ RecordSource
     └── ...
 ```
 
-`core` provides `MemoryRecordSource`, which keeps its records in memory and emits the same change events, for testing a manager without a data service.
+`core` provides `MemoryRecordSource`, which keeps its records in memory and emits the same change events, for testing a manager without a data service. Its `disconnect()` and `reconnect()` stand in for a lost connection: changes made between the two emit no event.
 
 The `feathers-connect` package provides `FeathersRecordSource`, over one service of a `FeathersConnection` ([its README](../packages/feathers-connect/README.md)).
 
 This allows the application architecture to remain independent of its storage technology.
 
-Decisions: [ADR 006](decisions/006-record-source-boundary.md), [ADR 007](decisions/007-data-service-source-of-truth.md), [ADR 008](decisions/008-startup-sync.md).
+Decisions: [ADR 006](decisions/006-record-source-boundary.md), [ADR 007](decisions/007-data-service-source-of-truth.md), [ADR 008](decisions/008-startup-sync.md), [ADR 017](decisions/017-resync-on-reconnect.md).
 
 ## Reactive State
 
@@ -1074,7 +1081,7 @@ startup.start()
 
 `start()` does not reject when the boot fails: the failure is in `status`, where the UI reads it. `stop()` shuts the system down.
 
-The connection status is not part of LiveSystem, which opens no connection. The application keeps it, for example in a `ref` set from its connection's `onConnected` and `onDisconnected`, and shows a warning while it is false. A connection that comes back does not yet bring the changes missed meanwhile ([ADR 008](decisions/008-startup-sync.md)).
+The connection status is not part of LiveSystem, which opens no connection. The application keeps it, for example in a `ref` set from its connection's `onConnected` and `onDisconnected`, and shows a warning while it is false. When the connection comes back, the data managers bring their stores up to date by themselves ([ADR 017](decisions/017-resync-on-reconnect.md)).
 
 Decision: [ADR 013](decisions/013-server-web-symmetry.md).
 
@@ -1153,3 +1160,4 @@ The reasons behind this design, and the options that were rejected, are recorded
 - [ADR 014: Failure and Shutdown](decisions/014-failure-and-shutdown.md)
 - [ADR 015: No Scheduler: Timers Belong to Their Owner](decisions/015-timers-belong-to-owner.md)
 - [ADR 016: Records Hold the Live State](decisions/016-records-hold-live-state.md)
+- [ADR 017: Resync on Reconnect: Fetch Again, Apply the Difference](decisions/017-resync-on-reconnect.md)
