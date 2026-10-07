@@ -33,13 +33,22 @@ export class FeathersConnection {
     #client: Application
     #connectedListeners = new Set<ConnectionListener>()
     #disconnectedListeners = new Set<ConnectionListener>()
+    #reconnectedListeners = new Set<ConnectionListener>()
+    #hasConnected = false
 
     constructor(options: FeathersConnectionOptions) {
         this.#url = options.url
         this.#connectTimeout = options.connectTimeout ?? DEFAULT_CONNECT_TIMEOUT
 
         this.#socket = io(this.#url, { transports: ['websocket'], autoConnect: false })
-        this.#socket.on('connect', () => this.#emit(this.#connectedListeners))
+        this.#socket.on('connect', () => {
+            const isReconnect = this.#hasConnected
+
+            this.#hasConnected = true
+            this.#emit(this.#connectedListeners)
+
+            if (isReconnect) this.#emit(this.#reconnectedListeners)
+        })
         this.#socket.on('disconnect', () => this.#emit(this.#disconnectedListeners))
 
         this.#client = feathers()
@@ -99,12 +108,24 @@ export class FeathersConnection {
 
     /** A record source over the service at a path. */
     recordSource<T extends HasId>(path: string, options?: FeathersRecordSourceOptions): FeathersRecordSource<T> {
-        return new FeathersRecordSource<T>(this.service(path), options)
+        return new FeathersRecordSource<T>(this.service(path), {
+            ...options,
+            onReconnected: listener => this.onReconnected(listener),
+        })
     }
 
     /** Called each time the connection is made, also after a lost connection comes back. */
     onConnected(listener: ConnectionListener): Unsubscribe {
         return this.#on(this.#connectedListeners, listener)
+    }
+
+    /**
+     * Called each time the connection is made after the first: a lost
+     * connection that socket.io brought back, or `connect()` after
+     * `disconnect()`. Changes made meanwhile were not heard.
+     */
+    onReconnected(listener: ConnectionListener): Unsubscribe {
+        return this.#on(this.#reconnectedListeners, listener)
     }
 
     /** Called each time the connection ends, whether lost or closed. */

@@ -1,5 +1,8 @@
 // The live server whole: a real data service, a real connection, commands over HTTP.
 import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
     createAddServerCommand,
     createRemoveServerCommand,
@@ -396,6 +399,49 @@ describe('the time scale', () => {
         await clock.advance(1)
         expect(finished).toMatchObject([{ commandId: 'c1', outcome: 'completed' }])
     })
+})
+
+describe('a data service that is restarted', () => {
+    test('the live server takes up a user created while it was away', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'virtual-infrastructure-'))
+        const filename = join(directory, 'records.sqlite')
+        const start = async (port: number) => {
+            const dataService = createDataService({ port, filename })
+
+            dataServices.push(dataService)
+
+            return { dataService, port: await dataService.start() }
+        }
+
+        try {
+            const first = await start(0)
+            const { liveServer, clock } = await startLiveServer(`http://localhost:${first.port}`)
+            const finished = collect(liveServer.events, 'commandFinished')
+
+            await first.dataService.stop()
+
+            // A data service over the same records on another port, which the live server
+            // is not connected to: no event tells it of the user created here
+            const aside = await start(0)
+            const { users } = await connect(`http://localhost:${aside.port}`)
+            const zed = await users.create({
+                name: 'Zed',
+                commandsPerMinute: 60,
+                commandMix: { search: 1, standard: 0, agentic: 0 },
+                frustration: 0,
+            })
+
+            await aside.dataService.stop()
+            await start(first.port)
+
+            // Zed has a live object once the live server has reconnected and fetched its records again
+            await advanceUntilArrived(clock, () => finished.some(event => event.userId === zed.id), 10_000)
+        } finally {
+            for (const liveServer of liveServers) await liveServer.stop()
+
+            rmSync(directory, { recursive: true, force: true })
+        }
+    }, 15_000)
 })
 
 describe('starting and stopping', () => {

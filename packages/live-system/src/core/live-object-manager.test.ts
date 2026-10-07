@@ -531,3 +531,19 @@ describe('in a LiveSystem', () => {
         await system.shutdown()
     })
 })
+
+describe('after a reconnect', () => {
+    test('only the records that differ gain or lose their object', async () => {
+        const { source, manager } = setup([first, second])
+        await boot(manager)
+        manager.log.length = 0
+
+        source.disconnect()
+        await source.remove('a')
+        await source.create({ id: 'c', name: 'third' })
+        source.reconnect()
+        await settle()
+
+        expect(manager.log).toEqual(['a:release', 'c:created', 'c:init', 'c:start', 'c:run'])
+    })
+})

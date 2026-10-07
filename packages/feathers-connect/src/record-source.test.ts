@@ -173,6 +173,33 @@ describe('listeners', () => {
     })
 })
 
+describe('onReconnected', () => {
+    test('subscribes through the option, and its unsubscribe ends it', () => {
+        const listeners = new Set<() => void>()
+        const { source } = setup({
+            onReconnected: listener => {
+                listeners.add(listener)
+
+                return () => listeners.delete(listener)
+            },
+        })
+        let calls = 0
+        const unsubscribe = source.onReconnected(() => (calls += 1))
+
+        for (const listener of listeners) listener()
+        unsubscribe()
+
+        expect(calls).toBe(1)
+        expect(listeners.size).toBe(0)
+    })
+
+    test('without the option, a listener is never called and can be unsubscribed', () => {
+        const { source } = setup()
+
+        expect(() => source.onReconnected(() => {})()).not.toThrow()
+    })
+})
+
 describe('idField', () => {
     test('records come back with `id`', async () => {
         const { service, source } = setup({ idField: '_id' })

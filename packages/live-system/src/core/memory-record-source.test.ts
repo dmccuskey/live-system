@@ -216,3 +216,48 @@ describe('change events', () => {
         expect(await source.get('a')).toEqual(first)
     })
 })
+
+describe('a lost connection', () => {
+    test('changes made while disconnected emit no event, and are there to read', async () => {
+        const source = new MemoryRecordSource<Item>([first])
+        const events: string[] = []
+        source.onCreated(() => events.push('created'))
+        source.onPatched(() => events.push('patched'))
+        source.onRemoved(() => events.push('removed'))
+
+        source.disconnect()
+        await source.create(second)
+        await source.patch('b', { name: 'changed' })
+        await source.remove('a')
+
+        expect(events).toEqual([])
+        expect(await source.find()).toEqual([{ ...second, name: 'changed' }])
+    })
+
+    test('reconnect() calls the onReconnected listeners, and changes emit their events again', async () => {
+        const source = new MemoryRecordSource<Item>()
+        const events: string[] = []
+        source.onReconnected(() => events.push('reconnected'))
+        source.onCreated(() => events.push('created'))
+
+        source.disconnect()
+        expect(events).toEqual([])
+
+        source.reconnect()
+        await source.create(first)
+
+        expect(events).toEqual(['reconnected', 'created'])
+    })
+
+    test('an unsubscribed onReconnected listener is not called', () => {
+        const source = new MemoryRecordSource<Item>()
+        let calls = 0
+        const unsubscribe = source.onReconnected(() => (calls += 1))
+
+        source.reconnect()
+        unsubscribe()
+        source.reconnect()
+
+        expect(calls).toBe(1)
+    })
+})

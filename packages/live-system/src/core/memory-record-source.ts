@@ -8,6 +8,10 @@ type ChangeEvent = 'created' | 'updated' | 'patched' | 'removed'
  * A record source with no backend. It behaves as a data service does: every
  * change emits its event, and records are handed out as copies, so nothing
  * outside can change what it holds.
+ *
+ * A test of a lost connection calls `disconnect()`, changes records, and calls
+ * `reconnect()`: the changes made between the two emit no event, as if
+ * another client had made them while the data service could not be reached.
  */
 export class MemoryRecordSource<T extends HasId> implements RecordSource<T> {
     #records = new Map<string, T>()
@@ -17,6 +21,8 @@ export class MemoryRecordSource<T extends HasId> implements RecordSource<T> {
         patched: new Set(),
         removed: new Set(),
     }
+    #reconnectedListeners = new Set<() => void>()
+    #connected = true
 
     constructor(records: T[] = []) {
         for (const record of records) {
@@ -77,6 +83,30 @@ export class MemoryRecordSource<T extends HasId> implements RecordSource<T> {
         return this.#on('removed', listener)
     }
 
+    onReconnected(listener: () => void): Unsubscribe {
+        const entry = () => listener()
+
+        this.#reconnectedListeners.add(entry)
+
+        return () => {
+            this.#reconnectedListeners.delete(entry)
+        }
+    }
+
+    /** From here on no change emits its event, until `reconnect()`. The calls still work. */
+    disconnect(): void {
+        this.#connected = false
+    }
+
+    /** Changes emit their events again, and the `onReconnected` listeners are called. */
+    reconnect(): void {
+        this.#connected = true
+
+        for (const listener of [...this.#reconnectedListeners]) {
+            listener()
+        }
+    }
+
     #existing(id: string): T {
         const record = this.#records.get(id)
 
@@ -104,6 +134,8 @@ export class MemoryRecordSource<T extends HasId> implements RecordSource<T> {
     }
 
     #emit(event: ChangeEvent, record: T): void {
+        if (!this.#connected) return
+
         for (const listener of [...this.#listeners[event]]) {
             listener(structuredClone(record))
         }
