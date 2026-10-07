@@ -1,6 +1,8 @@
 // What the server and the web share: the lifecycle, LiveSystem, BaseManager,
 // LiveObject, the command types, RecordSource, the record store, DataManager<T>,
-// LiveObjectManager and the optional event bus.
+// LiveObjectManager, the optional event bus and the clock.
+export { FakeClock, scaledClock, systemClock } from './clock.ts'
+export type { CancelTimer, Clock } from './clock.ts'
 export { CommandError, fillRoute } from './command.ts'
 export type { Command, CommandErrorInfo, CommandResponse } from './command.ts'
 export { DataManager } from './data-manager.ts'

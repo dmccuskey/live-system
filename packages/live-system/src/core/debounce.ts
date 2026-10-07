@@ -1,6 +1,10 @@
 // debouncePatch: collects an object's record updates and writes them as one.
+import { systemClock } from './clock.ts'
+import type { CancelTimer, Clock } from './clock.ts'
 
 export interface DebouncePatchOptions {
+    /** Where the delay's timer comes from. Real time by default. */
+    clock?: Clock
     /** Called with what a delayed write failed with. Logs with `console.error` by default. */
     onError?: (error: unknown) => void
 }
@@ -26,16 +30,17 @@ export function debouncePatch<T>(
     delay: number,
     options: DebouncePatchOptions = {},
 ): DebouncedPatch<T> {
+    const clock = options.clock ?? systemClock
     const onError = options.onError ?? (error => console.error('debouncePatch: a write failed', error))
 
     let pending: Partial<T> | undefined
-    let timer: ReturnType<typeof setTimeout> | undefined
+    let cancelTimer: CancelTimer | undefined
 
     function take(): Partial<T> | undefined {
         const data = pending
 
-        clearTimeout(timer)
-        timer = undefined
+        cancelTimer?.()
+        cancelTimer = undefined
         pending = undefined
 
         return data
@@ -51,10 +56,10 @@ export function debouncePatch<T>(
         patch(data) {
             pending = { ...pending, ...data }
 
-            clearTimeout(timer)
-            timer = setTimeout(() => {
+            cancelTimer?.()
+            cancelTimer = clock.after(delay, () => {
                 flush().catch(onError)
-            }, delay)
+            })
         },
         flush,
         cancel() {
