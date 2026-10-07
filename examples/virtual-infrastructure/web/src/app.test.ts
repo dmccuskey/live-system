@@ -3,7 +3,10 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { createAddServerCommand } from '@virtual-infrastructure/protocol/servers/servers.commands'
 import { SETTINGS_KEYS } from '@virtual-infrastructure/protocol/settings/settings.constants'
 import { createUpdateSettingsCommand } from '@virtual-infrastructure/protocol/settings/settings.commands'
+import { SERVICES } from '@virtual-infrastructure/protocol/services'
 import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
+import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
+import { FeathersConnection } from 'feathers-connect'
 import { createDataService, type DataService } from '../../data-service/src/app.ts'
 import { createLiveServer, type LiveServer } from '../../live-server/src/app.ts'
 import { createWebApp, type WebApp } from './app.ts'
@@ -41,6 +44,25 @@ const setUp = async () => {
     webApps.push(webApp)
 
     return { dataService, liveServer, webApp, commandUrl }
+}
+
+/** Creates users in the data service as another client would, without a live server. */
+const createUsers = async (dataServiceUrl: string, ...names: string[]) => {
+    const connection = new FeathersConnection({ url: dataServiceUrl })
+    const users = connection.recordSource<UserRecord>(SERVICES.users)
+
+    await connection.connect()
+
+    for (const name of names) {
+        await users.create({
+            name,
+            commandsPerMinute: 0,
+            commandMix: { search: 1, standard: 0, agentic: 0 },
+            frustration: 0,
+        })
+    }
+
+    await connection.disconnect()
 }
 
 describe('the web app', () => {
@@ -141,6 +163,38 @@ describe('the web app', () => {
         await until(() => !webApp.isConnected.value)
         expect(webApp.status.phase).toBe('running')
     })
+
+    test('after the data service is restarted, the stores hold what it holds now', async () => {
+        const first = createDataService({ port: 0, filename: ':memory:' })
+
+        dataServices.push(first)
+
+        const port = await first.start()
+        const dataServiceUrl = `http://localhost:${port}`
+        const webApp = createWebApp({ dataServiceUrl, commandUrl: 'http://localhost:1/command' })
+        const names = () => useUsers(webApp.pinia).value.map(user => user.name)
+
+        webApps.push(webApp)
+
+        await createUsers(dataServiceUrl, 'Alice', 'Bob')
+        await webApp.start()
+
+        expect(names()).toEqual(['Alice', 'Bob'])
+
+        // Killed: a data service that keeps its records in memory comes back without them
+        await first.stop()
+        await until(() => !webApp.isConnected.value)
+
+        const second = createDataService({ port, filename: ':memory:' })
+
+        dataServices.push(second)
+        await second.start()
+        await createUsers(dataServiceUrl, 'Carol')
+
+        // No event said that Alice and Bob are gone: only fetching again shows it
+        await until(() => webApp.isConnected.value && names().join() === 'Carol', 8_000)
+        expect(webApp.status.phase).toBe('running')
+    }, 10_000)
 
     test('stop() stops the system, disconnects and clears the error', async () => {
         const { webApp } = await setUp()
