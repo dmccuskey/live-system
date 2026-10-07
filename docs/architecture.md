@@ -12,6 +12,16 @@ The central idea is:
 
 LiveSystem is intentionally small. It does not attempt to provide a complete application framework, distributed actor system, workflow engine, or database abstraction. Instead, it provides a small set of composable primitives from which those applications can be built.
 
+## What It Is For
+
+LiveSystem is designed for soft-realtime applications: systems whose state changes over time, whether or not someone is watching. It is also useful for building realistic prototypes, which emulate the behavior of the systems behind an interface.
+
+Both need objects that hold state, act over time, and report changes as they happen. A mock API can return plausible data when asked, but it cannot start a process later, run it for a while, or report a failure while the user is elsewhere. That kind of behavior calls for a live object, with its own state and timers.
+
+These are the two uses known so far, and others may fit the same architecture. They give a live object one of two [roles](#roles): processor or simulator.
+
+The [demo](#demo-application) is a small prototype of this kind: its virtual users and virtual servers are live objects that emulate people and machines.
+
 ## Design Philosophy
 
 LiveSystem is based on several principles.
@@ -500,6 +510,17 @@ Live Object
 A manager creates and destroys the live object.
 
 The object manages what happens while it exists.
+
+### Roles
+
+"Live object" says what the thing is. What it is for is usually one of two roles:
+
+| role          | example                                      | what it does                                               |
+| ------------- | -------------------------------------------- | ---------------------------------------------------------- |
+| **Processor** | a chart in a trading system                  | watches data and derives more data from it as it changes   |
+| **Simulator** | the demo's `VirtualServer` and `VirtualUser` | behaves like a system or a person that is not really there |
+
+The framework treats both alike: the role is a way to think about an object, not a class to extend. A prototype is mostly simulators, and a soft-realtime application mostly processors.
 
 Decision: [ADR 016](decisions/016-records-hold-live-state.md), on what a record holds.
 

@@ -4,6 +4,8 @@ A lightweight TypeScript framework for building applications whose state and beh
 
 LiveSystem treats an application as a living system, not a collection of request handlers. The application starts, brings up its components in order, and then keeps running: its objects do work, react to events, and hold state across many interactions.
 
+It is designed for soft-realtime applications, such as a trading backend, and is also useful for realistic prototypes, which emulate the systems behind an interface. Other uses may fit the same architecture. See [What It Is For](docs/architecture.md#what-it-is-for).
+
 A command asks the running system to do something. It is a route plus data, and it is not tied to HTTP:
 
 ```ts
