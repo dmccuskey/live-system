@@ -4,7 +4,7 @@ LiveSystem is at the design stage. The design is in [Architecture](architecture.
 
 ## Current Baseline
 
-The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)), and in `live-system/core` so are the `LifecycleRunner` ([Architecture](architecture.md#lifecyclerunner)), the `LiveSystem` class that boots and shuts down its managers ([Architecture](architecture.md#the-livesystem-object)), `BaseManager`, `LiveObject`, the `Unsubscribe` type and the optional `EventBus` ([Architecture](architecture.md#the-event-bus)). Commands are in place too: `core` has the `Command`, `CommandResponse` and `CommandError` types and the `fillRoute` helper, and `live-system/server` has the `Router` and the `CommandServer` ([Architecture](architecture.md#commands)). A `LiveSystem` given a router registers each manager's `routes()` in `addManager` and removes them on shutdown. Data is in place in `core` as well ([Architecture](architecture.md#data-and-record-sources)): the `RecordSource` interface and `MemoryRecordSource`, `defineRecordStore` for the Pinia store of one kind of record, `DataManager` with the startup sync, `LiveObjectManager`, which takes its live objects through `init()`, `start()` and `run()`, and the opt-in `debouncePatch`. `feathers-connect` is implemented ([its README](../packages/feathers-connect/README.md)): the `FeathersConnection` and the `FeathersRecordSource` over one of its services, which the demo's live server checks against `RecordSource`. `live-system/web` has the `CommandClient` ([Architecture](architecture.md#the-commandclient)) and `WebStartup`, which boots a web app's system and keeps its status as reactive state ([Architecture](architecture.md#starting-a-web-app)). Of the demo, the data service is implemented ([Demo Architecture](architecture-demo.md#the-data-service)), and so is the live server with its virtual users and servers ([Demo Architecture](architecture-demo.md#the-live-server)): users generate commands, servers run them within their capacity, and the servers are scaled automatically or by hand, by a setting ([Demo Architecture](architecture-demo.md#server-management)). A user's frustration rises with refused, delayed and aborted commands and falls as its commands complete ([Demo Architecture](architecture-demo.md#user-frustration)). The demo's web app is implemented in Vue 3 ([Demo Architecture](architecture-demo.md#the-web-app)): it mirrors the data service into its own stores, shows the users and the servers as they change, and sends the Demo User's commands.
+The repository is a [Bun](https://bun.sh) workspace with every package in place. `micro-fsm` is implemented ([its README](../packages/micro-fsm/README.md)), and in `live-system/core` so are the `LifecycleRunner` ([Architecture](architecture.md#lifecyclerunner)), the `LiveSystem` class that boots and shuts down its managers ([Architecture](architecture.md#the-livesystem-object)), `BaseManager`, `LiveObject`, the `Unsubscribe` type and the optional `EventBus` ([Architecture](architecture.md#the-event-bus)). Commands are in place too: `core` has the `Command`, `CommandResponse` and `CommandError` types and the `fillRoute` helper, and `live-system/server` has the `Router` and the `CommandServer` ([Architecture](architecture.md#commands)). A `LiveSystem` given a router registers each manager's `routes()` in `addManager` and removes them on shutdown. Data is in place in `core` as well ([Architecture](architecture.md#data-and-record-sources)): the `RecordSource` interface and `MemoryRecordSource`, `defineRecordStore` for the Pinia store of one kind of record, `DataManager` with the startup sync, `LiveObjectManager`, which takes its live objects through `init()`, `start()` and `run()`, the opt-in `debouncePatch`, and the `Clock` with its `systemClock`, `scaledClock` and `FakeClock` ([Architecture](architecture.md#time)). `feathers-connect` is implemented ([its README](../packages/feathers-connect/README.md)): the `FeathersConnection` and the `FeathersRecordSource` over one of its services, which the demo's live server checks against `RecordSource`. `live-system/web` has the `CommandClient` ([Architecture](architecture.md#the-commandclient)) and `WebStartup`, which boots a web app's system and keeps its status as reactive state ([Architecture](architecture.md#starting-a-web-app)). Of the demo, the data service is implemented ([Demo Architecture](architecture-demo.md#the-data-service)), and so is the live server with its virtual users and servers ([Demo Architecture](architecture-demo.md#the-live-server)): users generate commands, servers run them within their capacity, and the servers are scaled automatically or by hand, by a setting ([Demo Architecture](architecture-demo.md#server-management)). A user's frustration rises with refused, delayed and aborted commands and falls as its commands complete ([Demo Architecture](architecture-demo.md#user-frustration)). The demo's web app is implemented in Vue 3 ([Demo Architecture](architecture-demo.md#the-web-app)): it mirrors the data service into its own stores, shows the users and the servers as they change, and sends the Demo User's commands.
 
 | Package                                | Folder                                          | Depends on                                                                                                                                                           |
 | -------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -95,6 +95,30 @@ What follows from this:
 ## Testing
 
 Every change brings its tests ([ADR 012](decisions/012-bun-workspace-and-demo.md)). A test file sits beside the code it tests and is named `<file>.test.ts`.
+
+### Time in Tests
+
+A test of behavior over time does not wait for real time: it gives the code a `FakeClock` ([Architecture](architecture.md#time)) and moves it.
+
+```ts
+const clock = new FakeClock()
+const debounced = debouncePatch(write, 100, { clock })
+
+debounced.patch({ count: 1 })
+await clock.advance(100) // runs every timer due within 100 ms, each at its own time
+```
+
+- `advance(ms)` moves the time on and runs the timers that come due. After each timer it lets the promises the timer began come to rest, so a timer set from there runs too.
+- `advanceToNext()` moves to the timer due first, however far off it is.
+
+The demo's live server tests get the clock from `createContext()` and `bootSystem()` in its `test-support.ts`, and durations there are the real ones: a search command runs for 2,000 ms of the clock. Two helpers wait for a condition:
+
+| Helper                                  | For                                                                                                                                                      |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `advanceUntil(clock, condition)`        | a system on in-memory record sources: moves the clock from timer to timer until the condition holds                                                      |
+| `advanceUntilArrived(clock, condition)` | a system that reaches a real data service: the same, with a moment of real time after each timer for what was sent to arrive, and a timeout in real time |
+
+Sleeping for real (`Bun.sleep`, `setTimeout`) to let simulated time pass makes a test fail when its process stalls. Real time is only for what really takes it: a network, or the `systemClock` itself.
 
 ### Vue Components
 

@@ -6,7 +6,7 @@ import type { LiveSystem } from 'live-system/core'
 import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
 import { StatusManager } from './status-manager.ts'
-import { bootSystem, TIME_SCALE, until } from './test-support.ts'
+import { advanceUntil, bootSystem } from './test-support.ts'
 
 /** A record source that keeps what it was asked to patch. */
 class RecordingSource extends MemoryRecordSource<StatusRecord> {
@@ -73,10 +73,10 @@ describe('the start', () => {
 describe('the records', () => {
     test("a status with another key is left alone, and the server manager's is created beside it", async () => {
         const other = { id: 'x2', key: 'users', queueLength: 9, waitingForRoom: 0, utilization: 0.9 }
-        const { source, queue } = await boot([other])
+        const { source, queue, clock } = await boot([other])
 
         queue(1)
-        await until(() => source.patches.length > 0)
+        await advanceUntil(clock, () => source.patches.length > 0)
 
         expect(await source.find()).toEqual([
             other,
@@ -87,10 +87,10 @@ describe('the records', () => {
 
 describe('a servers.queueChanged event', () => {
     test('the length is written to the record', async () => {
-        const { source, queue } = await boot()
+        const { source, queue, clock } = await boot()
 
         queue(3)
-        await until(() => source.patches.length > 0)
+        await advanceUntil(clock, () => source.patches.length > 0)
 
         expect(await source.find()).toMatchObject([
             { key: STATUS_KEYS.servers, queueLength: 3, waitingForRoom: 3, utilization: 0 },
@@ -98,12 +98,12 @@ describe('a servers.queueChanged event', () => {
     })
 
     test('a record from an earlier run is written by the ID it has', async () => {
-        const { source, queue } = await boot([
+        const { source, queue, clock } = await boot([
             { id: 'x1', key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 },
         ])
 
         queue(2)
-        await until(() => source.patches.length > 0)
+        await advanceUntil(clock, () => source.patches.length > 0)
 
         expect(await source.find()).toEqual([
             { id: 'x1', key: STATUS_KEYS.servers, queueLength: 2, waitingForRoom: 2, utilization: 0 },
@@ -111,12 +111,12 @@ describe('a servers.queueChanged event', () => {
     })
 
     test('changes close together are written as one, the last', async () => {
-        const { source, queue } = await boot()
+        const { source, queue, clock } = await boot()
 
         queue(1)
         queue(2)
         queue(1)
-        await Bun.sleep(100 * TIME_SCALE * 5)
+        await clock.advance(100 * 5)
 
         expect(source.patches).toEqual([{ queueLength: 1, waitingForRoom: 1 }])
     })
@@ -124,20 +124,20 @@ describe('a servers.queueChanged event', () => {
 
 describe('a servers.utilizationChanged event', () => {
     test('the utilization is written to the record', async () => {
-        const { source, utilization } = await boot()
+        const { source, utilization, clock } = await boot()
 
         utilization(0.4)
-        await until(() => source.patches.length > 0)
+        await advanceUntil(clock, () => source.patches.length > 0)
 
         expect(await source.find()).toMatchObject([{ queueLength: 0, waitingForRoom: 0, utilization: 0.4 }])
     })
 
     test('a change of the queue close to it is the same write', async () => {
-        const { source, queue, utilization } = await boot()
+        const { source, queue, utilization, clock } = await boot()
 
         utilization(1)
         queue(2)
-        await Bun.sleep(100 * TIME_SCALE * 5)
+        await clock.advance(100 * 5)
 
         expect(source.patches).toEqual([{ utilization: 1, queueLength: 2, waitingForRoom: 2 }])
     })
@@ -145,12 +145,12 @@ describe('a servers.utilizationChanged event', () => {
 
 describe('stopping', () => {
     test('what is still to be written is written, and later events are not', async () => {
-        const { system, source, queue } = await boot()
+        const { system, source, queue, clock } = await boot()
 
         queue(2)
         await system.shutdown()
         queue(5)
-        await Bun.sleep(100 * TIME_SCALE * 3)
+        await clock.advance(100 * 3)
 
         expect(source.patches).toEqual([{ queueLength: 2, waitingForRoom: 2 }])
     })

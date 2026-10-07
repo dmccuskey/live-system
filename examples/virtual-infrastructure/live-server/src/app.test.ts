@@ -15,10 +15,11 @@ import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastr
 import type { AddUserResult } from '@virtual-infrastructure/protocol/users/users.commands'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { FeathersConnection } from 'feathers-connect'
+import { FakeClock } from 'live-system/core'
 import type { Command, CommandResponse } from 'live-system/core'
 import { createDataService, type DataService } from '../../data-service/src/app.ts'
 import { createLiveServer, type LiveServer } from './app.ts'
-import { collect, TIME_SCALE, until } from './test-support.ts'
+import { advanceUntilArrived, collect } from './test-support.ts'
 
 let dataServices: DataService[] = []
 let liveServers: LiveServer[] = []
@@ -33,7 +34,9 @@ const startDataService = async () => {
 }
 
 const startLiveServer = async (dataServiceUrl: string) => {
-    const liveServer = createLiveServer({ dataServiceUrl, port: 0, timeScale: TIME_SCALE })
+    // The simulation runs on a clock the test moves: only the network runs on real time
+    const clock = new FakeClock()
+    const liveServer = createLiveServer({ dataServiceUrl, port: 0, clock })
 
     liveServers.push(liveServer)
 
@@ -48,7 +51,7 @@ const startLiveServer = async (dataServiceUrl: string) => {
         return (await response.json()) as CommandResponse<R>
     }
 
-    return { liveServer, send }
+    return { liveServer, send, clock }
 }
 
 const connect = async (url: string) => {
@@ -87,7 +90,7 @@ describe('a first start', () => {
         const loads: number[] = []
         servers.onPatched(record => loads.push(record.load))
 
-        const { liveServer } = await startLiveServer(url)
+        const { liveServer, clock } = await startLiveServer(url)
         const finished = collect(liveServer.events, 'commandFinished')
 
         const [server] = await servers.find()
@@ -96,7 +99,7 @@ describe('a first start', () => {
         expect(server).toMatchObject({ name: 'Server 1', capacity: 10 })
         expect(user).toMatchObject({ name: 'Alice', frustration: 0 })
 
-        await until(() => finished.length >= 2, 10_000)
+        await advanceUntilArrived(clock, () => finished.length >= 2, 10_000)
 
         expect(finished[0]).toMatchObject({ userId: user?.id, serverId: server?.id, outcome: 'completed' })
         expect(Math.max(...loads)).toBeGreaterThan(0)
@@ -168,15 +171,15 @@ describe('commands', () => {
         const { servers } = await quiet(url)
         const seen: ServerRecord[] = []
         servers.onPatched(record => seen.push(record))
-        const { liveServer } = await startLiveServer(url)
+        const { liveServer, clock } = await startLiveServer(url)
         const started = collect(liveServer.events, 'commandStarted')
 
         liveServer.events.emit('commandRequested', { commandId: 'c1', userId: 'someone', type: 'agentic' })
 
         const serverId = started[0]?.serverId as string
 
-        await until(() => seen.some(record => record.load === 4))
-        await until(() => seen.at(-1)?.load === 0)
+        await advanceUntilArrived(clock, () => seen.some(record => record.load === 4))
+        await advanceUntilArrived(clock, () => seen.at(-1)?.load === 0)
 
         expect(seen.map(record => [record.id, record.load, record.activeCommands])).toEqual([
             [serverId, 4, 1],
@@ -187,7 +190,7 @@ describe('commands', () => {
     test('a command that finds the server full waits, and runs when there is room', async () => {
         const url = await startDataService()
         await quiet(url)
-        const { liveServer } = await startLiveServer(url)
+        const { liveServer, clock } = await startLiveServer(url)
         const queued = collect(liveServer.events, 'commandQueued')
         const refused = collect(liveServer.events, 'commandRefused')
         const finished = collect(liveServer.events, 'commandFinished')
@@ -200,7 +203,7 @@ describe('commands', () => {
         expect(queued.map(event => event.commandId)).toEqual(['c-u3'])
         expect(refused.map(event => [event.commandId, event.reason])).toEqual([['c-again', 'queue_full']])
 
-        await until(() => finished.length === 3)
+        await advanceUntilArrived(clock, () => finished.length === 3)
 
         expect(finished.map(event => event.outcome)).toEqual(['completed', 'completed', 'completed'])
     })
@@ -305,7 +308,7 @@ describe('settings and scaling', () => {
         const removed: string[] = []
         servers.onCreated(record => created.push(record.name))
         servers.onRemoved(record => removed.push(record.name))
-        const { liveServer } = await startLiveServer(url)
+        const { liveServer, clock } = await startLiveServer(url)
         let isLoaded = true
         let count = 0
         const request = (userId: string) => {
@@ -318,9 +321,9 @@ describe('settings and scaling', () => {
         })
         for (const userId of ['u1', 'u2', 'u3']) request(userId)
 
-        await until(() => created.includes('Server 2'), 5_000)
+        await advanceUntilArrived(clock, () => created.includes('Server 2'), 5_000)
         isLoaded = false
-        await until(() => removed.length === 1, 5_000)
+        await advanceUntilArrived(clock, () => removed.length === 1, 5_000)
 
         // Which of the two goes depends on where the last commands ran: the ServerManager's tests cover the choice
         expect(removed).toHaveLength(1)
@@ -333,13 +336,13 @@ describe('settings and scaling', () => {
         await users.create(quietUser)
         const seen: number[] = []
         status.onPatched(record => seen.push(record.utilization))
-        const { liveServer } = await startLiveServer(url)
+        const { liveServer, clock } = await startLiveServer(url)
 
         liveServer.events.emit('commandRequested', { commandId: 'c1', userId: 'someone', type: 'agentic' })
 
         // The average follows the command gradually, in whole percent, up to its load and back
-        await until(() => seen.includes(0.4))
-        await until(() => seen.at(-1) === 0)
+        await advanceUntilArrived(clock, () => seen.includes(0.4))
+        await advanceUntilArrived(clock, () => seen.at(-1) === 0)
 
         expect(Math.max(...seen)).toBe(0.4)
         expect(seen.length).toBeGreaterThan(2)
@@ -351,7 +354,7 @@ describe('settings and scaling', () => {
         await users.create(quietUser)
         const lengths: number[] = []
         status.onPatched(record => lengths.push(record.queueLength))
-        const { liveServer, send } = await startLiveServer(url)
+        const { liveServer, send, clock } = await startLiveServer(url)
         const finished = collect(liveServer.events, 'commandFinished')
 
         await send(createUpdateSettingsCommand('servers', { scalingMode: 'manual' }))
@@ -359,11 +362,39 @@ describe('settings and scaling', () => {
             liveServer.events.emit('commandRequested', { commandId: `c-${userId}`, userId, type: 'agentic' })
         }
 
-        await until(() => lengths.includes(1))
-        await until(() => finished.length === 3)
-        await until(() => lengths.at(-1) === 0)
+        await advanceUntilArrived(clock, () => lengths.includes(1))
+        await advanceUntilArrived(clock, () => finished.length === 3)
+        await advanceUntilArrived(clock, () => lengths.at(-1) === 0)
 
         expect(lengths.filter((length, index) => length !== lengths[index - 1])).toEqual([1, 0])
+    })
+})
+
+describe('the time scale', () => {
+    test('multiplies the durations on the clock: at 0.01 a search of 2 s ends after 20 ms', async () => {
+        const url = await startDataService()
+        const { users } = await connect(url)
+        await users.create({
+            name: 'Quiet',
+            commandsPerMinute: 0,
+            commandMix: { search: 1, standard: 0, agentic: 0 },
+            frustration: 0,
+        })
+        const clock = new FakeClock()
+        const liveServer = createLiveServer({ dataServiceUrl: url, port: 0, clock, timeScale: 0.01 })
+
+        liveServers.push(liveServer)
+        await liveServer.start()
+
+        const finished = collect(liveServer.events, 'commandFinished')
+
+        liveServer.events.emit('commandRequested', { commandId: 'c1', userId: 'someone', type: 'search' })
+
+        await clock.advance(19)
+        expect(finished).toEqual([])
+
+        await clock.advance(1)
+        expect(finished).toMatchObject([{ commandId: 'c1', outcome: 'completed' }])
     })
 })
 

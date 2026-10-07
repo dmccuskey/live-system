@@ -2,7 +2,8 @@
 import type { DemoEvents } from '@virtual-infrastructure/protocol/events'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
 import { FeathersConnection } from 'feathers-connect'
-import { EventBus, LiveSystem } from 'live-system/core'
+import { EventBus, LiveSystem, scaledClock, systemClock } from 'live-system/core'
+import type { Clock } from 'live-system/core'
 import { CommandServer, Router } from 'live-system/server'
 import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
@@ -17,9 +18,11 @@ export interface LiveServerOptions {
     dataServiceUrl: string
     /** The port to take commands on. With 0 the system picks a free one. */
     port: number
+    /** The time and the timers of the simulation. Real time, unless given. */
+    clock?: Clock
     /** `Math.random`, unless given. */
     random?: () => number
-    /** Multiplies every duration and delay. 1, unless given. */
+    /** Multiplies every duration and delay on the clock. 1, unless given. */
     timeScale?: number
 }
 
@@ -34,6 +37,7 @@ export interface LiveServer {
 
 export function createLiveServer(options: LiveServerOptions): LiveServer {
     const events = new EventBus<DemoEvents>()
+    const clock = options.clock ?? systemClock
     let running: { system: LiveSystem<DemoContext>; commandServer: CommandServer } | undefined
 
     return {
@@ -48,10 +52,10 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
 
             const system = new LiveSystem<DemoContext>({
                 context: {
+                    clock: options.timeScale === undefined ? clock : scaledClock(clock, options.timeScale),
                     events,
                     pinia,
                     random: options.random ?? Math.random,
-                    timeScale: options.timeScale ?? 1,
                 },
                 router,
                 connect: () => connection.connect(),

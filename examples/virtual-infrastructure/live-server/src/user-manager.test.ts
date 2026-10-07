@@ -7,7 +7,7 @@ import { defineRecordStore, MemoryRecordSource } from 'live-system/core'
 import type { LiveSystem } from 'live-system/core'
 import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
-import { bootSystem, collect, until } from './test-support.ts'
+import { advanceUntil, bootSystem, collect } from './test-support.ts'
 import { UserManager } from './user-manager.ts'
 
 const user = (id: string, name: string): UserRecord => ({
@@ -126,34 +126,34 @@ describe('the users at work', () => {
     }
 
     test('a user added while the system runs begins to send commands', async () => {
-        const { send, sent } = await bootAndCollect([user('u1', 'Alice')])
+        const { send, sent, clock } = await bootAndCollect([user('u1', 'Alice')])
         const response = await send<AddUserResult>(createAddUserCommand())
         if (response.status !== 'accepted') throw new Error(response.error.message)
         const id = response.result?.id
 
-        await until(() => sent.some(event => event.userId === id), 5000)
+        await advanceUntil(clock, () => sent.some(event => event.userId === id))
     })
 
     test('a removed user stops sending', async () => {
-        const { send, sent } = await bootAndCollect([user('u1', 'Alice')])
+        const { send, sent, clock } = await bootAndCollect([user('u1', 'Alice')])
 
-        await until(() => sent.length >= 1)
+        await advanceUntil(clock, () => sent.length >= 1)
         await send(createRemoveUserCommand('u1'))
 
         const count = sent.length
-        await Bun.sleep(120)
+        await clock.advance(12_000)
 
         expect(sent).toHaveLength(count)
     })
 
     test('after shutdown no user sends', async () => {
-        const { system, sent } = await bootAndCollect([user('u1', 'Alice'), user('u2', 'Bob')])
+        const { system, sent, clock } = await bootAndCollect([user('u1', 'Alice'), user('u2', 'Bob')])
 
-        await until(() => sent.length >= 1)
+        await advanceUntil(clock, () => sent.length >= 1)
         await system.shutdown()
 
         const count = sent.length
-        await Bun.sleep(120)
+        await clock.advance(12_000)
 
         expect(sent).toHaveLength(count)
     })
@@ -161,10 +161,10 @@ describe('the users at work', () => {
 
 describe('frustration', () => {
     test("what becomes of a user's commands reaches its record", async () => {
-        const { context, source } = await boot([{ ...user('u1', 'Alice'), commandsPerMinute: 0 }])
+        const { context, source, clock } = await boot([{ ...user('u1', 'Alice'), commandsPerMinute: 0 }])
 
         context.events.emit('commandRefused', { commandId: 'c1', userId: 'u1', type: 'search', reason: 'queue_full' })
-        await Bun.sleep(30)
+        await clock.advance(3_000)
 
         expect((await source.get('u1')).frustration).toBeCloseTo(FRUSTRATION_REFUSED)
     })

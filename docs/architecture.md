@@ -511,6 +511,28 @@ A manager creates and destroys the live object.
 
 The object manages what happens while it exists.
 
+### Time
+
+A live object that acts over time (it waits, it repeats, it measures how long something took) may use `setTimeout()` and `Date.now()` directly. Tests of that behavior are then at the mercy of real time: they have to wait for it, and they fail when their process stalls. So `core` offers a `Clock` that an application can use instead, which a test can replace and move by hand:
+
+```ts
+interface Clock {
+    now(): number // milliseconds: only the difference between two readings means anything
+    after(delay: number, fn: () => void): CancelTimer
+    every(interval: number, fn: () => void): CancelTimer
+}
+```
+
+Each timer returns the function that cancels it, which its owner calls at the end of its own life, as with a subscription. `core` has three clocks:
+
+| Clock                       | Is                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `systemClock`               | real time                                                                                         |
+| `scaledClock(clock, scale)` | another clock with every delay multiplied by `scale`, for a simulation that runs faster or slower |
+| `FakeClock`                 | a clock for tests: time stands still until the test moves it                                      |
+
+The clock is opt-in, and it is there for the tests: nothing in LiveSystem asks for one or passes one around. An application that wants one puts it in its context, where its managers and live objects find it. With a `FakeClock` there, a test of behavior over time waits for nothing and does not depend on how fast its process runs ([Development](development.md#time-in-tests)).
+
 ### Roles
 
 "Live object" says what the thing is. What it is for is usually one of two roles:
@@ -667,7 +689,7 @@ servers.get('42') // one record, or undefined
 
 Only the `DataManager` for those records writes to the store. Everything else reads, and what reads inside a `computed` or a `watch` reacts when the record is replaced. A record is replaced whole when it changes, never changed in place.
 
-An object whose record changes faster than is worth writing can collect its updates with `debouncePatch`, which merges them and writes once after a quiet delay. It is opt-in: by default an update is written as it happens.
+An object whose record changes faster than is worth writing can collect its updates with `debouncePatch`, which merges them and writes once after a quiet delay. It is opt-in: by default an update is written as it happens. Its delay runs on real time, or on the [clock](#time) it is given.
 
 When Feathers is used, a useful model is:
 
@@ -974,11 +996,11 @@ live-system/
 
 `live-system` is one package with three entry points:
 
-| Entry point | Holds                                                                                                                                                      |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core`      | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the record store, the optional event bus |
-| `server`    | the router and the `CommandServer`, which turns an HTTP request into a command                                                                             |
-| `web`       | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status                                                                  |
+| Entry point | Holds                                                                                                                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core`      | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the record store, the optional event bus, the clock |
+| `server`    | the router and the `CommandServer`, which turns an HTTP request into a command                                                                                        |
+| `web`       | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status                                                                             |
 
 `micro-fsm` and `feathers-connect` start in this workspace and are built to move to repositories of their own.
 

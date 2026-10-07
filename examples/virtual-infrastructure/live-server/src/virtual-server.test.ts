@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { MemoryRecordSource } from 'live-system/core'
-import { collect, createContext, finishedEvents, TIME_SCALE, until } from './test-support.ts'
+import { advanceUntil, collect, createContext, finishedEvents } from './test-support.ts'
 import { VirtualServer } from './virtual-server.ts'
 
 const record: ServerRecord = { id: 's1', name: 'Server 1', capacity: 10, load: 0, activeCommands: 0, isDraining: false }
@@ -27,7 +27,7 @@ const create = (overrides: Partial<ServerRecord> = {}) => {
 
     servers.push(server)
 
-    return { server, source, context, events: finishedEvents(context) }
+    return { server, source, context, clock: context.clock, events: finishedEvents(context) }
 }
 
 const command = (id: string, type: 'search' | 'standard' | 'agentic' = 'search') => ({ id, userId: 'u1', type })
@@ -98,12 +98,12 @@ describe('taking a command', () => {
 
 describe('finishing a command', () => {
     test('a command finishes after its duration, frees its units and emits commandFinished', async () => {
-        const { server, events } = create()
+        const { server, events, clock } = create()
 
         server.take(command('c1', 'search'))
         expect(events).toEqual([])
 
-        await until(() => events.length === 1)
+        await advanceUntil(clock, () => events.length === 1)
 
         expect(events[0]).toEqual({
             commandId: 'c1',
@@ -117,28 +117,28 @@ describe('finishing a command', () => {
     })
 
     test('a longer command outlasts a shorter one', async () => {
-        const { server, events } = create()
+        const { server, events, clock } = create()
 
         server.take(command('long', 'standard'))
         server.take(command('short', 'search'))
 
-        await until(() => events.length === 1)
+        await advanceUntil(clock, () => events.length === 1)
 
         expect(events[0]?.commandId).toBe('short')
         expect(server.load).toBe(COMMAND_TYPES.standard.cost)
 
-        await until(() => events.length === 2)
+        await advanceUntil(clock, () => events.length === 2)
 
         expect(events[1]?.commandId).toBe('long')
     })
 
     test('the room a finished command leaves can be taken', async () => {
-        const { server, events } = create({ capacity: 1 })
+        const { server, events, clock } = create({ capacity: 1 })
 
         server.take(command('c1'))
         expect(server.take(command('c2'))).toBe(false)
 
-        await until(() => events.length === 1)
+        await advanceUntil(clock, () => events.length === 1)
 
         expect(server.take(command('c2'))).toBe(true)
     })
@@ -146,35 +146,35 @@ describe('finishing a command', () => {
 
 describe('the record', () => {
     test('the load and the count of active commands are written to the record', async () => {
-        const { server, source } = create()
+        const { server, source, clock } = create()
 
         server.take(command('c1', 'agentic'))
         server.take(command('c2', 'agentic'))
 
-        await until(() => source.patches.length > 0)
+        await advanceUntil(clock, () => source.patches.length > 0)
 
         expect(await source.get('s1')).toMatchObject({ load: 8, activeCommands: 2 })
     })
 
     test('changes close together are written as one', async () => {
-        const { server, source } = create()
+        const { server, source, clock } = create()
 
         server.take(command('c1', 'agentic'))
         server.take(command('c2', 'agentic'))
         server.take(command('c3', 'standard'))
-        await Bun.sleep(100 * TIME_SCALE * 5)
+        await clock.advance(100 * 5)
 
         expect(source.patches).toEqual([{ load: 10, activeCommands: 3 }])
     })
 
     test('the record is back at zero once every command has finished', async () => {
-        const { server, source, events } = create()
+        const { server, source, events, clock } = create()
 
         server.take(command('c1'))
         server.take(command('c2'))
 
-        await until(() => events.length === 2)
-        await until(() => source.patches.at(-1)?.load === 0)
+        await advanceUntil(clock, () => events.length === 2)
+        await advanceUntil(clock, () => source.patches.at(-1)?.load === 0)
 
         expect(await source.get('s1')).toMatchObject({ load: 0, activeCommands: 0 })
     })
@@ -217,11 +217,11 @@ describe('draining', () => {
     })
 
     test('what it runs goes on to its end', async () => {
-        const { server, events } = create()
+        const { server, events, clock } = create()
 
         server.take(command('c1', 'search'))
         server.drain()
-        await until(() => events.length === 1)
+        await advanceUntil(clock, () => events.length === 1)
 
         expect(events[0]).toMatchObject({ commandId: 'c1', outcome: 'completed' })
         expect(server.activeCommands).toBe(0)
@@ -238,24 +238,24 @@ describe('draining', () => {
     })
 
     test('the record says that the server drains, and that it no longer does', async () => {
-        const { server, source } = create()
+        const { server, source, clock } = create()
 
         server.drain()
-        await until(() => source.patches.length === 1)
+        await advanceUntil(clock, () => source.patches.length === 1)
         expect(await source.get('s1')).toMatchObject({ isDraining: true })
 
         server.resume()
-        await until(() => source.patches.length === 2)
+        await advanceUntil(clock, () => source.patches.length === 2)
         expect(await source.get('s1')).toMatchObject({ isDraining: false })
     })
 
     test('draining twice is written once', async () => {
-        const { server, source } = create()
+        const { server, source, clock } = create()
 
         server.drain()
-        await until(() => source.patches.length === 1)
+        await advanceUntil(clock, () => source.patches.length === 1)
         server.drain()
-        await Bun.sleep(100 * TIME_SCALE * 5)
+        await clock.advance(100 * 5)
 
         expect(source.patches).toEqual([{ isDraining: true }])
     })
@@ -271,11 +271,11 @@ describe('draining', () => {
     })
 
     test('a destroyed server is not drained', async () => {
-        const { server, source } = create()
+        const { server, source, clock } = create()
 
         server.destroy()
         server.drain()
-        await Bun.sleep(100 * TIME_SCALE * 5)
+        await clock.advance(100 * 5)
 
         expect(server.isDraining).toBe(false)
         expect(source.patches).toEqual([])
@@ -299,11 +299,11 @@ describe('destroying a server', () => {
     })
 
     test('nothing finishes and nothing is written afterwards', async () => {
-        const { server, source, events } = create()
+        const { server, source, events, clock } = create()
 
         server.take(command('c1', 'search'))
         server.destroy()
-        await Bun.sleep(COMMAND_TYPES.search.duration * TIME_SCALE * 2)
+        await clock.advance(COMMAND_TYPES.search.duration * 2)
 
         expect(events).toHaveLength(1)
         expect(source.patches).toEqual([])

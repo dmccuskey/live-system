@@ -191,7 +191,7 @@ Relief comes from being served, never from time passing:
 - A user that is not being served does not calm down: with nothing completing, the frustration stays where it is.
 - A command still waiting adds nothing yet. Its user shows frustration meanwhile, because a user may have only one command waiting and its further ones are refused.
 
-The `VirtualUser` does the counting. It listens on the event bus for the outcomes of its own commands, keeps the value in memory, and writes it to its record through `debouncePatch`. Waits and run times are measured in simulated time. No command outlives the live server, so at startup each user's frustration is reset to 0.
+The `VirtualUser` does the counting. It listens on the event bus for the outcomes of its own commands, keeps the value in memory, and writes it to its record through `debouncePatch`. Waits and run times are measured on the context's clock. No command outlives the live server, so at startup each user's frustration is reset to 0.
 
 The numbers are placeholders, in the protocol's `users/users.constants.ts`, and the arithmetic is in the live server's `frustration.ts`.
 
@@ -296,6 +296,8 @@ The two server routes are refused in automatic mode.
 | `servers.utilizationChanged` | the `ServerManager`              | the average utilization of the servers as a whole has changed                                                                                                         |
 
 An event that reports a manager's own status is named after the manager, as the last two are, so that another manager's status can be told apart from it.
+
+**Time comes from the context's clock.** LiveSystem does not ask for this: the demo does it so that its tests can move the time by hand instead of waiting for it. Every delay of the simulation (a user's pause between commands, a command's duration, the sampling of the load, the delay before a record is written) is set on the `clock` in the context, a `Clock` of `live-system/core` ([Architecture](architecture.md#time)), and the waits and run times are read from it. By default it is real time. `createLiveServer` takes a `timeScale`, which multiplies every delay (0.1 runs the simulation ten times as fast), and a `clock` of its own, which is how a test gives its `FakeClock`.
 
 ### Settings and Status
 
