@@ -7,7 +7,7 @@ import type {
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { debouncePatch, LiveObject } from 'live-system/core'
-import type { DebouncedPatch, LiveObjectOptions, RecordSource, Unsubscribe } from 'live-system/core'
+import type { CancelTimer, DebouncedPatch, LiveObjectOptions, RecordSource, Unsubscribe } from 'live-system/core'
 import type { DemoContext } from './context.ts'
 import { afterAborted, afterCompleted, afterQueued, afterRefused } from './frustration.ts'
 import { pickCommandType } from './profile.ts'
@@ -28,7 +28,7 @@ export class VirtualUser extends LiveObject {
     readonly id: string
     #record: UserRecord
     #context: DemoContext
-    #timer: ReturnType<typeof setTimeout> | undefined
+    #cancelTimer: CancelTimer | undefined
     #frustration = 0
     // When each of its commands began to wait in the queue, and began to run, by the command's ID
     #queuedAt = new Map<string, number>()
@@ -46,7 +46,8 @@ export class VirtualUser extends LiveObject {
         this.id = record.id
         this.#record = record
         this.#context = context
-        this.#write = debouncePatch<UserRecord>(data => source.patch(this.id, data), WRITE_DELAY * context.timeScale, {
+        this.#write = debouncePatch<UserRecord>(data => source.patch(this.id, data), WRITE_DELAY, {
+            clock: context.clock,
             onError: error => {
                 // A write that fails after the user has gone has nothing left to report
                 if (!this.isDestroyed) console.error(`VirtualUser ${this.id}: a write failed`, error)
@@ -78,7 +79,7 @@ export class VirtualUser extends LiveObject {
         this.#subscriptions.push(
             events.on(
                 'commandQueued',
-                own(event => this.#queuedAt.set(event.commandId, performance.now())),
+                own(event => this.#queuedAt.set(event.commandId, this.#context.clock.now())),
             ),
             events.on(
                 'commandStarted',
@@ -100,8 +101,8 @@ export class VirtualUser extends LiveObject {
     }
 
     protected override release(): void {
-        clearTimeout(this.#timer)
-        this.#timer = undefined
+        this.#cancelTimer?.()
+        this.#cancelTimer = undefined
         this.#write.cancel()
 
         for (const unsubscribe of this.#subscriptions.splice(0)) unsubscribe()
@@ -114,12 +115,12 @@ export class VirtualUser extends LiveObject {
         if (this.isDestroyed || !(rate > 0)) return
 
         const mean = 60_000 / rate
-        const delay = -Math.log(1 - this.#context.random()) * mean * this.#context.timeScale
+        const delay = -Math.log(1 - this.#context.random()) * mean
 
-        this.#timer = setTimeout(() => {
+        this.#cancelTimer = this.#context.clock.after(delay, () => {
             this.#send()
             this.#schedule()
-        }, delay)
+        })
     }
 
     #send(): void {
@@ -133,7 +134,7 @@ export class VirtualUser extends LiveObject {
         const queuedAt = this.#queuedAt.get(event.commandId)
 
         this.#queuedAt.delete(event.commandId)
-        this.#startedAt.set(event.commandId, performance.now())
+        this.#startedAt.set(event.commandId, this.#context.clock.now())
 
         if (queuedAt !== undefined) this.#set(afterQueued(this.#frustration, this.#since(queuedAt)))
     }
@@ -160,9 +161,9 @@ export class VirtualUser extends LiveObject {
         this.#set(afterAborted(this.#frustration, ran / COMMAND_TYPES[event.type].duration))
     }
 
-    // The simulated milliseconds since a moment of `performance.now()`
+    // The milliseconds since a moment of the clock
     #since(moment: number): number {
-        return (performance.now() - moment) / this.#context.timeScale
+        return this.#context.clock.now() - moment
     }
 
     #set(frustration: number): void {

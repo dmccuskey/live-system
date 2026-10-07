@@ -72,7 +72,8 @@ export class StatusManager extends DataManager<StatusRecord, DemoContext> {
 
         this.#writes.set(
             initial.key,
-            debouncePatch<StatusRecord>(data => this.source.patch(id, data), WRITE_DELAY * this.context.timeScale, {
+            debouncePatch<StatusRecord>(data => this.source.patch(id, data), WRITE_DELAY, {
+                clock: this.context.clock,
                 onError: error => {
                     if (!this.#isStopped)
                         console.error(`StatusManager: a write of the status '${initial.key}' failed`, error)

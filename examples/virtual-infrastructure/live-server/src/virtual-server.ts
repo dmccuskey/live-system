@@ -4,7 +4,7 @@ import type { CommandType } from '@virtual-infrastructure/protocol/servers/serve
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { debouncePatch, LiveObject } from 'live-system/core'
-import type { DebouncedPatch, LiveObjectOptions, RecordSource } from 'live-system/core'
+import type { CancelTimer, DebouncedPatch, LiveObjectOptions, RecordSource } from 'live-system/core'
 import type { DemoContext } from './context.ts'
 
 /** A user's command, as a server runs it. */
@@ -17,7 +17,7 @@ export interface ServerCommand {
 interface ActiveCommand {
     command: ServerCommand
     cost: number
-    timer: ReturnType<typeof setTimeout>
+    cancelTimer: CancelTimer
 }
 
 // How long the record's load waits for another change before it is written, in milliseconds
@@ -49,16 +49,13 @@ export class VirtualServer extends LiveObject {
         this.capacity = record.capacity
         this.#record = record
         this.#context = context
-        this.#write = debouncePatch<ServerRecord>(
-            data => source.patch(this.id, data),
-            WRITE_DELAY * context.timeScale,
-            {
-                onError: error => {
-                    // A write that fails after the server has gone has nothing left to report
-                    if (!this.isDestroyed) console.error(`VirtualServer ${this.id}: a write failed`, error)
-                },
+        this.#write = debouncePatch<ServerRecord>(data => source.patch(this.id, data), WRITE_DELAY, {
+            clock: context.clock,
+            onError: error => {
+                // A write that fails after the server has gone has nothing left to report
+                if (!this.isDestroyed) console.error(`VirtualServer ${this.id}: a write failed`, error)
             },
-        )
+        })
     }
 
     /** The capacity units the active commands take up. */
@@ -108,9 +105,9 @@ export class VirtualServer extends LiveObject {
 
         if (this.isDestroyed || this.#isDraining || cost > this.free || this.#active.has(command.id)) return false
 
-        const timer = setTimeout(() => this.#finish(command.id), duration * this.#context.timeScale)
+        const cancelTimer = this.#context.clock.after(duration, () => this.#finish(command.id))
 
-        this.#active.set(command.id, { command, cost, timer })
+        this.#active.set(command.id, { command, cost, cancelTimer })
         this.#load += cost
         this.#writeLoad()
         this.#context.events.emit('commandStarted', this.#event(command))
@@ -127,8 +124,8 @@ export class VirtualServer extends LiveObject {
         this.#active.clear()
         this.#load = 0
 
-        for (const { command, timer } of aborted) {
-            clearTimeout(timer)
+        for (const { command, cancelTimer } of aborted) {
+            cancelTimer()
             this.#emitFinished(command, 'aborted')
         }
     }

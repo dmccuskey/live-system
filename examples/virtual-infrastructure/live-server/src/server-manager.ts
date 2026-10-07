@@ -16,7 +16,15 @@ import { SERVER_ROUTES } from '@virtual-infrastructure/protocol/servers/servers.
 import { DEFAULT_SETTINGS, SETTINGS_KEYS } from '@virtual-infrastructure/protocol/settings/settings.constants'
 import type { SettingsRecord } from '@virtual-infrastructure/protocol/settings/settings.record'
 import { CommandError, LiveObjectManager } from 'live-system/core'
-import type { LiveObjectOptions, RecordSource, RecordStore, RouteParams, Routes, Unsubscribe } from 'live-system/core'
+import type {
+    CancelTimer,
+    LiveObjectOptions,
+    RecordSource,
+    RecordStore,
+    RouteParams,
+    Routes,
+    Unsubscribe,
+} from 'live-system/core'
 import { watch } from 'vue'
 import type { DemoContext } from './context.ts'
 import { ScalingPolicy, type ScalingDecider } from './scaling-policy.ts'
@@ -58,7 +66,7 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     // The utilization as it was last announced
     #announcedUtilization = 0
     #policy: ScalingDecider
-    #sampler: ReturnType<typeof setInterval> | undefined
+    #cancelSampler: CancelTimer | undefined
     // The servers whose removal has been asked for and not yet been heard of
     #removing = new Set<string>()
 
@@ -121,7 +129,7 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     override async run(): Promise<void> {
         await super.run()
 
-        this.#sampler = setInterval(() => this.#sample(), SCALING_SAMPLE_INTERVAL * this.context.timeScale)
+        this.#cancelSampler = this.context.clock.every(SCALING_SAMPLE_INTERVAL, () => this.#sample())
     }
 
     /** The Demo User adds a server. Refused in automatic mode. */
@@ -146,8 +154,8 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
 
     /** Stops sampling and listening and drops what waits, then destroys the servers, which aborts what runs. */
     override async stop(): Promise<void> {
-        clearInterval(this.#sampler)
-        this.#sampler = undefined
+        this.#cancelSampler?.()
+        this.#cancelSampler = undefined
 
         for (const unsubscribe of this.#subscriptions.splice(0)) unsubscribe()
 
