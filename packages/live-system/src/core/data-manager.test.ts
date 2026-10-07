@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { DataManager, defineRecordStore, LiveSystem, MemoryRecordSource } from 'live-system/core'
 import type { RecordStore } from 'live-system/core'
 import { createPinia } from 'pinia'
@@ -29,6 +29,12 @@ class ItemManager<C = unknown> extends DataManager<Item, C> {
         this.calls.push(['removed', record])
     }
 
+    failures: unknown[] = []
+
+    protected override resyncFailed(error: unknown): void {
+        this.failures.push(error)
+    }
+
     rename(id: string, name: string): Promise<Item> {
         return this.source.patch(id, { name })
     }
@@ -39,12 +45,14 @@ class GatedSource extends MemoryRecordSource<Item> {
     findGate: Promise<void> | undefined
     getGate: Promise<void> | undefined
     getFailure: Error | undefined
+    finds = 0
     gets: string[] = []
     listeners = 0
 
     override async find(): Promise<Item[]> {
         // The snapshot is taken first: what changes while it travels is not in it
         const records = await super.find()
+        this.finds += 1
         await this.findGate
 
         return records
@@ -431,6 +439,318 @@ describe('live: after init()', () => {
         await settle()
 
         expect(store.records).toEqual({ a: first })
+    })
+})
+
+describe('resync: after the source was lost and is back', () => {
+    // A live manager whose source changed while it could not be heard
+    async function lost(records: Item[], change: (source: GatedSource) => Promise<unknown>) {
+        const context = setup(records)
+        await context.manager.init()
+        context.manager.calls = []
+
+        context.source.disconnect()
+        await change(context.source)
+
+        return context
+    }
+
+    test('a record created meanwhile is added', async () => {
+        const { source, store, manager } = await lost([first], source => source.create(second))
+
+        expect(store.records).toEqual({ a: first })
+
+        source.reconnect()
+        await settle()
+
+        expect(store.records).toEqual({ a: first, b: second })
+        expect(manager.calls).toEqual([['added', second]])
+    })
+
+    test('a record changed meanwhile is replaced', async () => {
+        const { source, store, manager } = await lost([first, second], source => source.patch('a', { name: 'changed' }))
+
+        source.reconnect()
+        await settle()
+
+        expect(store.records).toEqual({ a: { id: 'a', name: 'changed' }, b: second })
+        expect(manager.calls).toEqual([['changed', { id: 'a', name: 'changed' }, first]])
+    })
+
+    test('a record removed meanwhile leaves the store', async () => {
+        const { source, store, manager } = await lost([first, second], source => source.remove('a'))
+
+        source.reconnect()
+        await settle()
+
+        expect(store.records).toEqual({ b: second })
+        expect(manager.calls).toEqual([['removed', first]])
+    })
+
+    test('every record removed meanwhile empties the store', async () => {
+        const { source, store, manager } = await lost([first, second], async source => {
+            await source.remove('a')
+            await source.remove('b')
+        })
+
+        source.reconnect()
+        await settle()
+
+        expect(store.records).toEqual({})
+        expect(manager.calls).toEqual([
+            ['removed', first],
+            ['removed', second],
+        ])
+    })
+
+    test('a record that is equal keeps its object, and no hook is called', async () => {
+        const { source, store, manager } = await lost([first, second], source => source.patch('b', { name: 'changed' }))
+        const before = store.get('a')
+
+        source.reconnect()
+        await settle()
+
+        expect(store.get('a')).toBe(before as Item)
+        expect(manager.calls).toHaveLength(1)
+    })
+
+    test('nothing changed meanwhile: nothing watching the store reacts', async () => {
+        const { source, store, manager } = await lost([first, second], async () => {})
+        let reactions = 0
+        watch(
+            () => ({ ...store.records }),
+            () => (reactions += 1),
+            { flush: 'sync' },
+        )
+
+        source.reconnect()
+        await settle()
+
+        expect(source.finds).toBe(2)
+        expect(reactions).toBe(0)
+        expect(manager.calls).toEqual([])
+    })
+
+    test('the hooks are called once the store holds every difference', async () => {
+        const { source, store, manager } = await lost([first, second], async source => {
+            await source.remove('a')
+            await source.patch('b', { name: 'changed' })
+            await source.create(third)
+        })
+        const seen: string[][] = []
+        const record = () => seen.push(Object.keys(store.records).sort())
+        Object.assign(manager, { recordAdded: record, recordChanged: record, recordRemoved: record })
+
+        source.reconnect()
+        await settle()
+
+        expect(seen).toEqual([
+            ['b', 'c'],
+            ['b', 'c'],
+            ['b', 'c'],
+        ])
+    })
+
+    test('the differences are reported as removed, changed, then added', async () => {
+        const { source, manager } = await lost([first, second], async source => {
+            await source.create(third)
+            await source.patch('b', { name: 'changed' })
+            await source.remove('a')
+        })
+
+        source.reconnect()
+        await settle()
+
+        expect(manager.calls.map(([name]) => name)).toEqual(['removed', 'changed', 'added'])
+    })
+
+    test('a change that arrives during the resync is not applied until it ends, and is not lost', async () => {
+        const { source, store, manager } = await lost([first], source => source.create(second))
+        const { promise, resolve } = Promise.withResolvers<void>()
+        source.findGate = promise
+
+        source.reconnect()
+        await settle()
+        await source.patch('a', { name: 'during' })
+        await source.create(third)
+
+        expect(store.records).toEqual({ a: first })
+
+        resolve()
+        await settle()
+
+        expect(store.records).toEqual({ a: { id: 'a', name: 'during' }, b: second, c: third })
+        expect(source.gets.sort()).toEqual(['a', 'c'])
+        expect(manager.calls.map(([name, record]) => [name, record?.id])).toEqual([
+            ['changed', 'a'],
+            ['added', 'b'],
+            ['added', 'c'],
+        ])
+    })
+
+    test('changes are applied as they arrive again after the resync', async () => {
+        const { source, store } = await lost([first], async () => {})
+
+        source.reconnect()
+        await settle()
+        await source.create(second)
+
+        expect(store.records).toEqual({ a: first, b: second })
+    })
+
+    test('a second reconnect overtakes a resync that never returns', async () => {
+        const { source, store, manager } = await lost([first], source => source.create(second))
+        source.findGate = new Promise(() => {})
+
+        source.reconnect()
+        await settle()
+
+        source.findGate = undefined
+        await source.create(third)
+        source.reconnect()
+        await settle()
+
+        expect(store.records).toEqual({ a: first, b: second, c: third })
+        expect(manager.calls).toEqual([
+            ['added', second],
+            ['added', third],
+        ])
+    })
+
+    test('a resync that is overtaken applies nothing when it returns', async () => {
+        const { source, store, manager } = await lost([first], source => source.create(second))
+        const { promise, resolve } = Promise.withResolvers<void>()
+        source.findGate = promise
+
+        source.reconnect()
+        await settle()
+        source.findGate = undefined
+        await source.remove('b')
+        source.reconnect()
+        await settle()
+        resolve()
+        await settle()
+
+        expect(store.records).toEqual({ a: first })
+        expect(manager.calls).toEqual([])
+    })
+
+    test('a resync that fails keeps the store, reports it, and changes are applied again', async () => {
+        const { source, store, manager } = await lost([first], source => source.create(second))
+        source.findGate = Promise.reject(new Error('no connection'))
+
+        source.reconnect()
+        await settle()
+
+        expect(store.records).toEqual({ a: first })
+        expect(manager.failures).toEqual([new Error('no connection')])
+
+        await source.create(third)
+
+        expect(store.records).toEqual({ a: first, c: third })
+    })
+
+    test('the reconnect after a failed resync syncs again', async () => {
+        const { source, store, manager } = await lost([first], source => source.create(second))
+        source.findGate = Promise.reject(new Error('no connection'))
+        source.reconnect()
+        await settle()
+
+        source.findGate = undefined
+        source.reconnect()
+        await settle()
+
+        expect(store.records).toEqual({ a: first, b: second })
+        expect(manager.failures).toHaveLength(1)
+    })
+
+    test('the default report of a failed resync is a console.error', async () => {
+        class PlainManager extends DataManager<Item> {}
+        const source = new GatedSource([first])
+        const manager = new PlainManager(undefined, source, defineRecordStore<Item>('items')(createPinia()))
+        const error = spyOn(console, 'error').mockImplementation(() => {})
+
+        try {
+            await manager.init()
+            source.findGate = Promise.reject(new Error('no connection'))
+            source.reconnect()
+            await settle()
+
+            expect(error).toHaveBeenCalledWith(
+                'PlainManager: the sync after a reconnect failed',
+                new Error('no connection'),
+            )
+        } finally {
+            error.mockRestore()
+        }
+    })
+
+    test('a manager stopped during the resync applies nothing', async () => {
+        const { source, store, manager } = await lost([first], source => source.create(second))
+        const { promise, resolve } = Promise.withResolvers<void>()
+        source.findGate = promise
+
+        source.reconnect()
+        await settle()
+        await manager.stop()
+        resolve()
+        await settle()
+
+        expect(store.records).toEqual({ a: first })
+        expect(manager.calls).toEqual([])
+    })
+
+    test('a stopped manager does not resync', async () => {
+        const { source, manager } = await lost([first], source => source.create(second))
+        await manager.stop()
+
+        source.reconnect()
+        await settle()
+
+        expect(source.finds).toBe(1)
+    })
+
+    test('a reconnect during the load starts it again, and init() ends with the newer one', async () => {
+        const { source, store, manager } = setup([first])
+        source.findGate = new Promise(() => {})
+
+        const init = manager.init()
+        await settle()
+        source.findGate = undefined
+        await source.create(second)
+        source.reconnect()
+        await init
+
+        expect(store.records).toEqual({ a: first, b: second })
+        expect(manager.calls).toEqual([
+            ['added', first],
+            ['added', second],
+        ])
+    })
+
+    test('a reconnect after a failed load does nothing', async () => {
+        const { source, store, manager } = setup([first])
+        source.findGate = Promise.reject(new Error('no connection'))
+        await manager.init().catch(() => {})
+
+        source.findGate = undefined
+        source.reconnect()
+        await settle()
+
+        expect(source.finds).toBe(1)
+        expect(store.records).toEqual({})
+    })
+
+    test('stop() ends an init() whose fetch never returns', async () => {
+        const { source, store, manager } = setup([first])
+        source.findGate = new Promise(() => {})
+
+        const init = manager.init()
+        await settle()
+        await manager.stop()
+        await init
+
+        expect(store.records).toEqual({})
     })
 })
 

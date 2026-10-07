@@ -106,6 +106,21 @@ describe('FeathersConnection', () => {
         expect(heard).toEqual(['connected', 'disconnected', 'disconnected'])
     })
 
+    test('onReconnected is not called for the first connection, and is for each one after', async () => {
+        const heard: string[] = []
+        connection.onConnected(() => heard.push('connected'))
+        const unsubscribe = connection.onReconnected(() => heard.push('reconnected'))
+
+        await connection.connect()
+        await connection.disconnect()
+        await connection.connect()
+        await connection.disconnect()
+        unsubscribe()
+        await connection.connect()
+
+        expect(heard).toEqual(['connected', 'connected', 'reconnected', 'connected'])
+    })
+
     test('service() gives the Feathers service', async () => {
         await connection.connect()
         await connection.service('items').create({ id: 'a', name: 'A' })
@@ -217,5 +232,40 @@ describe('a record source over the connection', () => {
         await second
 
         expect(heard).toEqual([{ id: 'a', name: 'A' }])
+    })
+
+    test('after a lost connection comes back, onReconnected is called and the records can be fetched again', async () => {
+        const source = connection.recordSource<Item>('items')
+        const heard: Item[] = []
+        source.onCreated(record => heard.push(record))
+        await connection.connect()
+        await source.create({ id: 'a', name: 'A' })
+
+        // The data service's end of this connection: the only one so far
+        const [serverSocket] = [...(app as any).io.sockets.sockets.values()]
+        const other = new FeathersConnection({ url })
+        await other.connect()
+
+        const lost = new Promise<void>(resolve => connection.onDisconnected(resolve))
+        const reconnected = new Promise<void>(resolve => source.onReconnected(resolve))
+
+        // Closes the transport under the socket, as a data service that dies does
+        serverSocket.conn.close()
+        await lost
+
+        // Made while the connection is away: no event reaches it
+        await other.recordSource<Item>('items').create({ id: 'b', name: 'B' })
+
+        // socket.io brings the connection back by itself, after about a second
+        await reconnected
+
+        expect(connection.isConnected).toBe(true)
+        expect(heard).toEqual([{ id: 'a', name: 'A' }])
+        expect(await source.find()).toEqual([
+            { id: 'a', name: 'A' },
+            { id: 'b', name: 'B' },
+        ])
+
+        await other.disconnect()
     })
 })

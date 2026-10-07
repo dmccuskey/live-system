@@ -31,4 +31,11 @@ export interface RecordSource<T extends HasId> {
     onUpdated(listener: RecordListener<T>): Unsubscribe
     onPatched(listener: RecordListener<T>): Unsubscribe
     onRemoved(listener: RecordListener<T>): Unsubscribe
+
+    /**
+     * Called when the source is reached again after it was lost. Change events
+     * may have been missed meanwhile, so what was loaded may be stale. Never
+     * called for the first connection.
+     */
+    onReconnected(listener: () => void): Unsubscribe
 }

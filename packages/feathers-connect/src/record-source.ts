@@ -40,6 +40,12 @@ export interface FeathersRecordSourceOptions {
     idField?: string
     /** A fixed query for `find`, when the source covers only a part of the service's records. */
     query?: Record<string, unknown>
+    /**
+     * How the source hears that the connection was made again after a lost
+     * one. `connection.recordSource()` supplies it. Without it, the source's
+     * `onReconnected` listeners are never called.
+     */
+    onReconnected?: (listener: () => void) => Unsubscribe
 }
 
 /**
@@ -52,11 +58,13 @@ export class FeathersRecordSource<T extends HasId> {
     #service: FeathersServiceLike
     #idField: string
     #query: Record<string, unknown> | undefined
+    #onReconnected: ((listener: () => void) => Unsubscribe) | undefined
 
     constructor(service: FeathersServiceLike, options: FeathersRecordSourceOptions = {}) {
         this.#service = service
         this.#idField = options.idField ?? 'id'
         this.#query = options.query
+        this.#onReconnected = options.onReconnected
     }
 
     /** Every record, as an array, whether the service returns a page, an array or a single record. */
@@ -101,6 +109,14 @@ export class FeathersRecordSource<T extends HasId> {
 
     onRemoved(listener: RecordListener<T>): Unsubscribe {
         return this.#on('removed', listener)
+    }
+
+    /**
+     * Called when the connection is made again after a lost one. Change events
+     * may have been missed meanwhile, so what was loaded may be stale.
+     */
+    onReconnected(listener: () => void): Unsubscribe {
+        return this.#onReconnected?.(listener) ?? (() => {})
     }
 
     #on(event: ChangeEvent, listener: RecordListener<T>): Unsubscribe {
