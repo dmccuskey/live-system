@@ -741,6 +741,31 @@ describe('scaling up', () => {
         expect(started[1]?.serverId).not.toBe('s1')
     })
 
+    test('while a server is being added, a further decision adds none', async () => {
+        const stub = stubPolicy()
+        const { context, source, clock } = await boot([server('s1')], stub.policy)
+        // A data service that does not answer: each create waits until it is released
+        const held: (() => void)[] = []
+        const create = source.create.bind(source)
+        source.create = data => new Promise((resolve, reject) => held.push(() => create(data).then(resolve, reject)))
+
+        announce(context)
+        stub.decisions.push('up', 'up', 'up')
+        await advanceUntil(clock, () => stub.decisions.length === 0)
+        await stub.sampled(clock)
+
+        expect(held).toHaveLength(1)
+
+        held.shift()?.()
+        await stub.sampled(clock)
+        stub.decisions.push('up')
+        await advanceUntil(clock, () => held.length === 1)
+        held.shift()?.()
+        await stub.sampled(clock)
+
+        expect((await source.find()).map(record => record.name)).toEqual(['Server 1', 'Server 2', 'Server 3'])
+    })
+
     test('there are never more than the most servers', async () => {
         const stub = stubPolicy()
         const records = Array.from({ length: MAX_SERVERS }, (_, index) => server(`s${index + 1}`))

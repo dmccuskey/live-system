@@ -69,6 +69,7 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     #cancelSampler: CancelTimer | undefined
     // The servers whose removal has been asked for and not yet been heard of
     #removing = new Set<string>()
+    #isAdding = false
 
     constructor(
         context: DemoContext,
@@ -397,9 +398,13 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
             return
         }
 
-        if (this.objects.size - this.#removing.size >= MAX_SERVERS) return
+        // One server is added at a time: while the data service does not answer, a further decision adds none
+        if (this.#isAdding || this.objects.size - this.#removing.size >= MAX_SERVERS) return
 
-        this.#createServer().catch(error => console.error('ServerManager: a server could not be added', error))
+        this.#isAdding = true
+        this.#createServer()
+            .catch(error => console.error('ServerManager: a server could not be added', error))
+            .finally(() => (this.#isAdding = false))
     }
 
     /**
