@@ -22,6 +22,18 @@ The repository is a [Bun](https://bun.sh) workspace with every package in place.
 
 The demo's protocol is laid out by domain: `users/` and `servers/` each hold a record, routes, commands and constants file, named with the domain first (`users.record.ts`, `users.routes.ts`, `users.commands.ts`, `users.constants.ts`), beside `services.ts` and `events.ts`. A command creator is named `create…Command`, for example `createAddUserCommand()`. Import a file by its path, for example `@virtual-infrastructure/protocol/users/users.record`.
 
+## Design Guidelines
+
+What to keep to when writing a manager or a live object, each explained in the [Architecture](architecture.md):
+
+| Guideline                                                                                                                                                          | Where                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Each phase has its work: `init()` reads own records, `start()` begins to watch, `run()` acts. The order of the managers never matters                              | [Each Phase Has Its Work](architecture.md#each-phase-has-its-work)            |
+| Data is shared through the store first. Every store is a projection of the data service, and a part that needs data another part owns watches the store            | [Sharing Data: the Store First](architecture.md#sharing-data-the-store-first) |
+| The event bus is for "special" communication: live objects among themselves, and a part reporting data for a record it does not own                                | [Event Sources](architecture.md#event-sources)                                |
+| A manager is not written for a single record. A record that belongs to a manager carries that manager's `key`, and the required ones are a table in the protocol   | [A Record per Manager](architecture.md#a-record-per-manager)                  |
+| Routes are only for what a web app sends in. Inside the system nothing sends a command or calls a manager directly: the parts react to the store and the event bus | [Who Sends Commands](architecture.md#who-sends-commands)                      |
+
 ## Build and Test
 
 Install [Bun](https://bun.sh/docs/installation), then from the repository root:

@@ -301,9 +301,9 @@ An event that reports a manager's own status is named after the manager, as the 
 
 ### Settings and Status
 
-Each kind of record has one manager, and only that manager writes it. The `SettingsManager` owns the settings records and the `StatusManager` the status records. Neither is written for a single record: each holds one record per manager, found by its key.
+Each kind of record has one manager, and only that manager writes it. The `SettingsManager` owns the settings records and the `StatusManager` the status records. Neither is written for a single record: each holds one record per manager, found by its key ([Architecture](architecture.md#a-record-per-manager)).
 
-**Settings travel through the store, not over the event bus.** Every store is a projection of the data service, and the settings store is no exception. The `settings/:key/update` route has the `SettingsManager` patch the record in the data service. The change comes back as an event of the service, and the `SettingsManager` writes it into the settings store. The `ServerManager` watches that store for the record with its key, `servers`, and takes its settings from there. The `SettingsManager` sees to it that the record is there before anything starts. Should it be missing all the same, for example deleted by hand in the data service during development, the `ServerManager` uses the defaults.
+**Settings travel through the store, not over the event bus.** Every store is a projection of the data service ([Architecture](architecture.md#sharing-data-the-store-first)), and the settings store is no exception. The `settings/:key/update` route has the `SettingsManager` patch the record in the data service. The change comes back as an event of the service, and the `SettingsManager` writes it into the settings store. The `ServerManager` watches that store for the record with its key, `servers`, and takes its settings from there. The `SettingsManager` sees to it that the record is there before anything starts. Should it be missing all the same, for example deleted by hand in the data service during development, the `ServerManager` uses the defaults.
 
 ```text
 UI ──▶ settings/servers/update ──▶ SettingsManager ──▶ data service
@@ -320,7 +320,7 @@ The stores are reached through the context, which holds the Pinia instance besid
 
 The utilization is announced after each sample, when it has changed. It leaves a draining server out, because its capacity is on its way out.
 
-The order the managers are added in does not matter, because each phase has its work. A manager loads its records into its store in `init()`, begins to listen and to watch in `start()`, and acts in `run()`. The `ServerManager` begins to watch the settings store in its `start()`, when every store is loaded, and the virtual users send their first commands in their `run()`.
+The order the managers are added in does not matter, because each phase has its work ([Architecture](architecture.md#each-phase-has-its-work)). A manager loads its records into its store in `init()`, begins to listen and to watch in `start()`, and acts in `run()`. The `ServerManager` begins to watch the settings store in its `start()`, when every store is loaded, and the virtual users send their first commands in their `run()`.
 
 ### How a Command Runs
 
