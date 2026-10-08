@@ -18,6 +18,7 @@ A manager reaches records through a `RecordSource<T>`, which covers one kind of 
 interface RecordSource<T extends { id: string }> {
     find(): Promise<T[]>
     get(id: string): Promise<T>
+    isNotFound(error: unknown): boolean
 
     create(data: Omit<T, 'id'> & { id?: string }): Promise<T>
     update(id: string, data: T): Promise<T>
@@ -34,7 +35,7 @@ interface RecordSource<T extends { id: string }> {
 - A record source is not the whole data store or the connection to it. Every record source of an application shares the one connection.
 - A record has a string `id`. A record to create may leave it out: the source then assigns one, which is how a backend that creates its own IDs (Feathers) works. A backend that names or types its ID otherwise (`_id`, a number) is converted by its implementation. How IDs are assigned is to be looked at again with the first backend that does not create them.
 - `find()` returns an array. An implementation whose backend returns pages or a single record normalizes the result.
-- `get(id)` rejects when the record does not exist. The startup sync depends on it ([ADR 008](008-startup-sync.md)).
+- `get(id)` rejects when the record does not exist, and `isNotFound(error)` says whether what a call rejected with means that. Any other failure says nothing of the record: the source may not have been reached. The startup sync depends on both ([ADR 008](008-startup-sync.md)).
 - Each subscription returns an `Unsubscribe` function. Whatever subscribes keeps it and calls it at the end of its own life: a manager in `stop()`, a live object in `destroy()`.
 - A record source does not load records on its own and has no "loaded" event. Loading is the `DataManager`'s job, during `init()`.
 - Feathers is one implementation, provided by the `feathers-connect` package. `RecordSource` is LiveSystem's requirement, and the implementation satisfies it.
@@ -61,5 +62,5 @@ Building `feathers-connect` settled what was left open above:
 - **The interface is unchanged.** Nothing in the earlier wrappers had a better shape.
 - **The data service creates string IDs.** A Feathers database adapter creates numeric IDs by default. The data service is set up to create strings instead, so the IDs in the database are the IDs in the records, a reference from one record to another has the same type as an ID, and a record created with an `id` keeps it. `FeathersRecordSource` renames the ID field where the backend calls it otherwise (`_id`) and converts no types.
 - **`feathers-connect` does not import `RecordSource`.** It is built to move to a repository of its own, so it satisfies the interface by its shape. A test in the demo's live server, which depends on both packages, fails the typecheck if the two drift apart.
-- **A failed call rejects with Feathers' own error,** unchanged, so a missing record (`NotFound`, code 404) can be told from another failure. The startup sync does not use this yet ([ADR 008](008-startup-sync.md)).
+- **A failed call rejects with Feathers' own error,** unchanged, so a missing record (`NotFound`, code 404) can be told from another failure: that is its `isNotFound(error)`.
 - **No authentication.** The earlier connection wrapper authenticated; this one does not, until authentication is designed ([ADR 013](013-server-web-symmetry.md)).
