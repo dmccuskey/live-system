@@ -1,16 +1,16 @@
 <script setup lang="ts">
 // The servers, and who decides how many there are: the scaling mode and the maximum utilization.
-import { createAddServerCommand } from '@virtual-infrastructure/protocol/servers/servers.commands'
-import { MAX_SERVERS } from '@virtual-infrastructure/protocol/servers/servers.constants'
-import { createUpdateSettingsCommand } from '@virtual-infrastructure/protocol/settings/settings.commands'
+import { createUpdateManagerCommand } from '@virtual-infrastructure/protocol/managers/managers.commands'
 import {
+    MANAGER_KEYS,
     MAX_MAX_UTILIZATION,
     MIN_MAX_UTILIZATION,
-    SETTINGS_KEYS,
-} from '@virtual-infrastructure/protocol/settings/settings.constants'
-import type { ScalingMode } from '@virtual-infrastructure/protocol/settings/settings.record'
+} from '@virtual-infrastructure/protocol/managers/managers.constants'
+import type { ScalingMode } from '@virtual-infrastructure/protocol/managers/managers.record'
+import { createAddServerCommand } from '@virtual-infrastructure/protocol/servers/servers.commands'
+import { MAX_SERVERS } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import { computed, ref, watch } from 'vue'
-import { useServers, useServerSettings } from '../composables/records.ts'
+import { useServerManagerRecord, useServers } from '../composables/records.ts'
 import { useWebApp } from '../composables/web-app.ts'
 import ServerCard from './ServerCard.vue'
 
@@ -21,14 +21,14 @@ const MODES: { mode: ScalingMode; label: string }[] = [
 
 const { commands } = useWebApp()
 const servers = useServers()
-const settings = useServerSettings()
+const settings = useServerManagerRecord()
 
 const isManual = computed(() => settings.value.scalingMode === 'manual')
 
 // Automatic scaling keeps no more than the most servers, so there the number is shown against that limit
 const count = computed(() => (isManual.value ? `${servers.value.length}` : `${servers.value.length} of ${MAX_SERVERS}`))
 
-// The slider's own value, in percent, from the first movement until the settings record has the change
+// The slider's own value, in percent, from the first movement until the manager's record has the change
 const draft = ref<number>()
 const maxUtilization = computed(() => draft.value ?? Math.round(settings.value.maxUtilization * 100))
 
@@ -40,7 +40,7 @@ watch(
 function setMode(mode: ScalingMode): void {
     if (mode === settings.value.scalingMode) return
 
-    commands.send(createUpdateSettingsCommand(SETTINGS_KEYS.servers, { scalingMode: mode }))
+    commands.send(createUpdateManagerCommand(MANAGER_KEYS.servers, { scalingMode: mode }))
 }
 
 // On release, not on every movement
@@ -53,7 +53,7 @@ async function setMaxUtilization(): Promise<void> {
 
     if (
         fraction === settings.value.maxUtilization ||
-        !(await commands.send(createUpdateSettingsCommand(SETTINGS_KEYS.servers, { maxUtilization: fraction })))
+        !(await commands.send(createUpdateManagerCommand(MANAGER_KEYS.servers, { maxUtilization: fraction })))
     ) {
         draft.value = undefined
     }

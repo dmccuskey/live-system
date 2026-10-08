@@ -1,8 +1,7 @@
 // The web app's system whole: a real data service and a real live server, commands over HTTP.
+import { createUpdateManagerCommand } from '@virtual-infrastructure/protocol/managers/managers.commands'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createAddServerCommand } from '@virtual-infrastructure/protocol/servers/servers.commands'
-import { SETTINGS_KEYS } from '@virtual-infrastructure/protocol/settings/settings.constants'
-import { createUpdateSettingsCommand } from '@virtual-infrastructure/protocol/settings/settings.commands'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
 import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
@@ -10,7 +9,7 @@ import { FeathersConnection } from 'feathers-connect'
 import { createDataService, type DataService } from '../../data-service/src/app.ts'
 import { createLiveServer, type LiveServer } from '../../live-server/src/app.ts'
 import { createWebApp, type WebApp } from './app.ts'
-import { useServers, useServerSettings, useServerStatus, useUsers } from './composables/records.ts'
+import { useServerManagerRecord, useServers, useUsers } from './composables/records.ts'
 import { until } from './test-support.ts'
 
 let dataServices: DataService[] = []
@@ -90,9 +89,11 @@ describe('the web app', () => {
         expect(useUsers(webApp.pinia).value).toHaveLength(1)
         // The first user is at work already, so automatic scaling may have added to the first server
         expect(useServers(webApp.pinia).value[0]).toMatchObject({ name: 'Server 1' })
-        expect(useServerSettings(webApp.pinia).value).toMatchObject({ scalingMode: 'automatic', maxUtilization: 0.75 })
-        expect('id' in useServerSettings(webApp.pinia).value).toBe(true)
-        expect('id' in useServerStatus(webApp.pinia).value).toBe(true)
+        expect(useServerManagerRecord(webApp.pinia).value).toMatchObject({
+            scalingMode: 'automatic',
+            maxUtilization: 0.75,
+        })
+        expect('id' in useServerManagerRecord(webApp.pinia).value).toBe(true)
     })
 
     test('a failed start is reported in the status', async () => {
@@ -121,13 +122,13 @@ describe('the web app', () => {
         await until(() => users.value.length === 1)
     })
 
-    test('a change of the settings arrives in the settings store', async () => {
+    test('a change of the settings arrives in the manager store', async () => {
         const { webApp } = await setUp()
-        const settings = useServerSettings(webApp.pinia)
+        const settings = useServerManagerRecord(webApp.pinia)
 
         await webApp.start()
         await webApp.commands.send(
-            createUpdateSettingsCommand(SETTINGS_KEYS.servers, { scalingMode: 'manual', maxUtilization: 0.5 }),
+            createUpdateManagerCommand('servers', { scalingMode: 'manual', maxUtilization: 0.5 }),
         )
 
         await until(() => settings.value.scalingMode === 'manual')

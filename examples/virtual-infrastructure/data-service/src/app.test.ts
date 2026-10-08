@@ -3,10 +3,9 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/managers.record'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
-import type { SettingsRecord } from '@virtual-infrastructure/protocol/settings/settings.record'
-import type { StatusRecord } from '@virtual-infrastructure/protocol/status/status.record'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { FeathersConnection } from 'feathers-connect'
 import { createDataService, type DataService } from './app.ts'
@@ -106,21 +105,21 @@ describe('records', () => {
         expect(await connection.recordSource<ServerRecord>(SERVICES.servers).find()).toEqual([])
     })
 
-    test('there is a service for the settings and one for the status', async () => {
+    test('there is a service for the manager records', async () => {
         const { port } = await start()
-        const connection = await connect(port)
-        const settings = connection.recordSource<SettingsRecord>(SERVICES.settings)
-        const status = connection.recordSource<StatusRecord>(SERVICES.status)
+        const managers = (await connect(port)).recordSource<ManagerRecord>(SERVICES.managers)
+        const record = {
+            key: 'servers' as const,
+            scalingMode: 'manual' as const,
+            maxUtilization: 0.75,
+            queueLength: 2,
+            waitingForRoom: 0,
+            utilization: 0.4,
+        }
 
-        const id = expect.stringMatching(/^[0-9a-f-]{36}$/)
+        await managers.create(record)
 
-        await settings.create({ key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 })
-        await status.create({ key: 'servers', queueLength: 2, waitingForRoom: 0, utilization: 0.4 })
-
-        expect(await settings.find()).toEqual([{ id, key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 }])
-        expect(await status.find()).toEqual([
-            { id, key: 'servers', queueLength: 2, waitingForRoom: 0, utilization: 0.4 },
-        ])
+        expect(await managers.find()).toEqual([{ id: expect.stringMatching(/^[0-9a-f-]{36}$/), ...record }])
     })
 
     test('patch, update and remove change the record', async () => {

@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_SETTINGS } from '@virtual-infrastructure/protocol/settings/settings.constants'
-import { INITIAL_STATUS } from '@virtual-infrastructure/protocol/status/status.constants'
+import { DEFAULT_MANAGER_RECORDS } from '@virtual-infrastructure/protocol/managers/managers.constants'
+import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/managers.record'
 import { createPinia } from 'pinia'
-import { useServerStore, useSettingsStore, useStatusStore, useUserStore } from '../stores.ts'
+import { useManagerStore, useServerStore, useUserStore } from '../stores.ts'
 import { serverRecord, userRecord } from '../test-support.ts'
-import { useServers, useServerSettings, useServerStatus, useUsers } from './records.ts'
+import { useServerManagerRecord, useServers, useUsers } from './records.ts'
 
 describe('useUsers', () => {
     test('is empty without records', () => {
@@ -70,55 +70,42 @@ describe('useServers', () => {
     })
 })
 
-describe('useServerSettings', () => {
+const managerRecord = (id: string, overrides: Partial<ManagerRecord> = {}): ManagerRecord => ({
+    id,
+    ...DEFAULT_MANAGER_RECORDS.servers,
+    ...overrides,
+})
+
+describe('useServerManagerRecord', () => {
     test('is the defaults while there is no record', () => {
-        expect(useServerSettings(createPinia()).value).toEqual(DEFAULT_SETTINGS.servers)
+        expect(useServerManagerRecord(createPinia()).value).toEqual(DEFAULT_MANAGER_RECORDS.servers)
     })
 
     test('is the record with the key `servers`, whatever its ID', () => {
         const pinia = createPinia()
 
-        useSettingsStore(pinia).load([
-            { id: 'x', key: 'other', scalingMode: 'automatic', maxUtilization: 0.3 },
-            { id: 'y', key: 'servers', scalingMode: 'manual', maxUtilization: 0.6 },
+        useManagerStore(pinia).load([
+            managerRecord('x', { key: 'other' as ManagerRecord['key'], maxUtilization: 0.3, queueLength: 9 }),
+            managerRecord('y', { scalingMode: 'manual', maxUtilization: 0.6, queueLength: 2, utilization: 0.5 }),
         ])
 
-        expect(useServerSettings(pinia).value).toMatchObject({ scalingMode: 'manual', maxUtilization: 0.6 })
+        expect(useServerManagerRecord(pinia).value).toEqual(
+            managerRecord('y', { scalingMode: 'manual', maxUtilization: 0.6, queueLength: 2, utilization: 0.5 }),
+        )
     })
 
     test('follows the record as it is replaced and removed', () => {
         const pinia = createPinia()
-        const store = useSettingsStore(pinia)
-        const settings = useServerSettings(pinia)
+        const store = useManagerStore(pinia)
+        const record = useServerManagerRecord(pinia)
 
-        store.set({ id: 'y', key: 'servers', scalingMode: 'manual', maxUtilization: 0.6 })
-        expect(settings.value.scalingMode).toBe('manual')
+        store.set(managerRecord('y', { scalingMode: 'manual', maxUtilization: 0.6 }))
+        expect(record.value.scalingMode).toBe('manual')
 
-        store.set({ id: 'y', key: 'servers', scalingMode: 'automatic', maxUtilization: 0.5 })
-        expect(settings.value).toMatchObject({ scalingMode: 'automatic', maxUtilization: 0.5 })
+        store.set(managerRecord('y', { maxUtilization: 0.5, utilization: 0.25 }))
+        expect(record.value).toMatchObject({ scalingMode: 'automatic', maxUtilization: 0.5, utilization: 0.25 })
 
         store.remove('y')
-        expect(settings.value).toEqual(DEFAULT_SETTINGS.servers)
-    })
-})
-
-describe('useServerStatus', () => {
-    test('is the initial status while there is no record', () => {
-        expect(useServerStatus(createPinia()).value).toEqual(INITIAL_STATUS.servers)
-    })
-
-    test('is the record with the key `servers`, and follows it', () => {
-        const pinia = createPinia()
-        const store = useStatusStore(pinia)
-        const status = useServerStatus(pinia)
-
-        store.load([
-            { id: 'x', key: 'other', queueLength: 9, waitingForRoom: 0, utilization: 0.9 },
-            { id: 'y', key: 'servers', queueLength: 2, waitingForRoom: 0, utilization: 0.5 },
-        ])
-        expect(status.value).toMatchObject({ queueLength: 2, waitingForRoom: 0, utilization: 0.5 })
-
-        store.set({ id: 'y', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.25 })
-        expect(status.value).toMatchObject({ queueLength: 0, waitingForRoom: 0, utilization: 0.25 })
+        expect(record.value).toEqual(DEFAULT_MANAGER_RECORDS.servers)
     })
 })
