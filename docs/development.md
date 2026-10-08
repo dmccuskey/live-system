@@ -158,10 +158,9 @@ Work happens on a branch named for the change (`feat/`, `fix/`, `docs/`), create
 
 These are ideas, not plans. Each needs discussion and a concrete use case before it is worked on.
 
-- **Writes made while the data service is away.** The transport may hold a write and send it when the connection returns, after the stores have been brought up to date ([ADR 017](decisions/017-resync-on-reconnect.md)). What a manager or a live object should do with such a write is not designed.
+- **A write that failed.** A write that the data service does not answer in time is rejected, as one made while the connection is away for longer than that ([ADR 017](decisions/017-resync-on-reconnect.md)). A `debouncePatch` reports the failure and drops the patch, so the fields stay as they were in the data service until their owner writes them again. Whether the patch is kept for the next write, or the owner writes its fields again when the connection is back, is not designed ([issue 1](https://github.com/dmccuskey/live-system/issues/1)).
 - **Trying a failed resync again.** A resync that fails is tried again only at the next reconnect ([ADR 017](decisions/017-resync-on-reconnect.md)).
 - **Other record sources** beside Feathers and the in-memory one, and with the first backend that does not create its own IDs, how IDs are assigned ([ADR 006](decisions/006-record-source-boundary.md)).
-- **Telling a failed refetch from a removed record.** During the startup sync, and a resync, any failed `get` counts as a removal, so a network error at that moment drops the record from the store ([ADR 008](decisions/008-startup-sync.md)).
 - **Authentication and permissions.** Out of scope for now ([ADR 013](decisions/013-server-web-symmetry.md)).
 - **Typed payloads per route.** A command's data typed by its route ([ADR 009](decisions/009-commands-events-crud.md)).
 - **A shared scheduling helper.** Only once several owners need the same thing ([ADR 015](decisions/015-timers-belong-to-owner.md)).

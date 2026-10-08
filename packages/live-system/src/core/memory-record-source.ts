@@ -4,6 +4,8 @@ import type { Unsubscribe } from './unsubscribe.ts'
 
 type ChangeEvent = 'created' | 'updated' | 'patched' | 'removed'
 
+class RecordNotFoundError extends Error {}
+
 /**
  * A record source with no backend. It behaves as a data service does: every
  * change emits its event, and records are handed out as copies, so nothing
@@ -36,6 +38,10 @@ export class MemoryRecordSource<T extends HasId> implements RecordSource<T> {
 
     async get(id: string): Promise<T> {
         return structuredClone(this.#existing(id))
+    }
+
+    isNotFound(error: unknown): boolean {
+        return error instanceof RecordNotFoundError
     }
 
     async create(data: NewRecord<T>): Promise<T> {
@@ -110,7 +116,7 @@ export class MemoryRecordSource<T extends HasId> implements RecordSource<T> {
     #existing(id: string): T {
         const record = this.#records.get(id)
 
-        if (!record) throw new Error(`No record with the ID '${id}'`)
+        if (!record) throw new RecordNotFoundError(`No record with the ID '${id}'`)
 
         return record
     }

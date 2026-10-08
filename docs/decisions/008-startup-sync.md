@@ -14,7 +14,7 @@ A `DataManager` loads its records during `init()`, in this order:
 
 1. **Subscribe** to the record source's change events. While loading, do not apply them: record the ID of each record that changes in a set.
 2. **Fetch the snapshot** with `find()`.
-3. **Reconcile.** For each ID in the set, fetch that record again with `get(id)`. A `get` that fails means the record was removed. Changes keep being recorded during these fetches, so the step repeats until a round ends with the set empty.
+3. **Reconcile.** For each ID in the set, fetch that record again with `get(id)`. A `get` that fails because the record does not exist (`isNotFound`) means the record was removed. Any other failure fails the sync: the record may well exist, and the source could not be asked. Changes keep being recorded during these fetches, so the step repeats until a round ends with the set empty.
 4. **Import** the result into the store in one batch, not record by record.
 5. **Go live.** From here on, change events are applied as they arrive.
 

@@ -294,7 +294,7 @@ describe('init(): the startup sync', () => {
         expect(source.gets).toEqual(['a', 'b', 'a'])
     })
 
-    test('a refetch that fails counts the record as removed', async () => {
+    test('a refetch that fails for another reason than a missing record fails the load', async () => {
         const { source, store, manager } = setup([first, second])
         const { promise, resolve } = Promise.withResolvers<void>()
         source.findGate = promise
@@ -304,9 +304,9 @@ describe('init(): the startup sync', () => {
         await settle()
         await source.patch('a', { name: 'patched' })
         resolve()
-        await init
 
-        expect(store.records).toEqual({ b: second })
+        expect(init).rejects.toThrow('not reachable')
+        expect(store.records).toEqual({})
     })
 
     test('rejects when the snapshot cannot be fetched, and stop() then ends the subscriptions', async () => {
@@ -648,6 +648,23 @@ describe('resync: after the source was lost and is back', () => {
         await source.create(third)
 
         expect(store.records).toEqual({ a: first, c: third })
+    })
+
+    test('a refetch that fails for another reason than a missing record fails the resync: no record is removed', async () => {
+        const { source, store, manager } = await lost([first, second], source => source.create(third))
+        const { promise, resolve } = Promise.withResolvers<void>()
+        source.findGate = promise
+        source.getFailure = new Error('no connection')
+
+        source.reconnect()
+        await settle()
+        await source.patch('a', { name: 'changed' })
+        resolve()
+        await settle()
+
+        expect(store.records).toEqual({ a: first, b: second })
+        expect(manager.calls).toEqual([])
+        expect(manager.failures).toEqual([new Error('no connection')])
     })
 
     test('the reconnect after a failed resync syncs again', async () => {

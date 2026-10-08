@@ -269,3 +269,82 @@ describe('a record source over the connection', () => {
         await other.disconnect()
     })
 })
+
+describe('a call that is not answered', () => {
+    /** Loses the connection as a data service that dies does. Resolves once it is lost. */
+    const lose = async (lost: FeathersConnection) => {
+        const [serverSocket] = [...(app as any).io.sockets.sockets.values()]
+        const isLost = new Promise<void>(resolve => lost.onDisconnected(resolve))
+
+        serverSocket.conn.close()
+        await isLost
+    }
+
+    test('a write made while the connection is away rejects after requestTimeout, and is not sent later', async () => {
+        const impatient = new FeathersConnection({ url, requestTimeout: 200 })
+        const source = impatient.recordSource<Item>('items')
+        await impatient.connect()
+        await source.create({ id: 'a', name: 'A' })
+
+        const reconnected = new Promise<void>(resolve => impatient.onReconnected(resolve))
+        await lose(impatient)
+
+        expect(source.patch('a', { name: 'late' })).rejects.toThrow('operation has timed out')
+
+        // socket.io brings the connection back by itself, after about a second: long after the timeout
+        await reconnected
+
+        expect(await source.find()).toEqual([{ id: 'a', name: 'A' }])
+
+        await impatient.disconnect()
+    })
+
+    test('a write made shortly before the connection is back is sent then', async () => {
+        const source = connection.recordSource<Item>('items')
+        await connection.connect()
+        await source.create({ id: 'a', name: 'A' })
+        await lose(connection)
+
+        expect(await source.patch('a', { name: 'held' })).toEqual({ id: 'a', name: 'held' })
+        expect(connection.isConnected).toBe(true)
+    })
+
+    test('a write under way when the connection is lost rejects, though the data service may have made it', async () => {
+        const impatient = new FeathersConnection({ url, requestTimeout: 200 })
+        const source = impatient.recordSource<Item>('items')
+        await impatient.connect()
+        await source.create({ id: 'a', name: 'A' })
+
+        // The data service has the patch and has not answered when the connection is lost
+        let arrived = () => {}
+        let made = () => {}
+        const hasArrived = new Promise<void>(resolve => (arrived = resolve))
+        const isMade = new Promise<void>(resolve => (made = resolve))
+        app.service('items').hooks({
+            before: {
+                patch: [
+                    async () => {
+                        arrived()
+                        await Bun.sleep(100)
+                    },
+                ],
+            },
+            after: { patch: [async () => made()] },
+        })
+
+        const outcome = source.patch('a', { name: 'under way' }).then(
+            () => 'answered',
+            (error: Error) => error.message,
+        )
+        await hasArrived
+        await lose(impatient)
+
+        expect(await outcome).toBe('socket has been disconnected')
+
+        await isMade
+
+        expect(await app.service('items').get('a')).toEqual({ id: 'a', name: 'under way' })
+
+        await impatient.disconnect()
+    })
+})

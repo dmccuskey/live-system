@@ -37,7 +37,7 @@ Records are compared in depth, by value. The hooks are called once the store hol
 
 **A newer sync overtakes an older one.** A request that was under way when the connection dropped may never be answered. So each reconnect starts a new sync at once, and a sync that is no longer the latest applies nothing when it returns. This holds during `init()` as well: a reconnect during the load starts the load again, and `init()` ends with the one that completes.
 
-**A failed resync keeps the store.** The store keeps what it holds, change events are applied again, and the next reconnect syncs again. The manager reports the failure through its `resyncFailed(error)` hook, which logs with `console.error` by default.
+**A failed resync keeps the store.** A resync fails when the snapshot cannot be fetched, or a record cannot be fetched again for another reason than that it is gone. The store keeps what it holds, change events are applied again, and the next reconnect syncs again. The manager reports the failure through its `resyncFailed(error)` hook, which logs with `console.error` by default.
 
 Rejected:
 
@@ -53,5 +53,5 @@ Rejected:
 - A record removed and created again under the same ID while the connection was away is seen as one changed record, so its live object carries on with the new record.
 - Until the resync completes, the store shows the state from before the connection was lost. The application shows the connection status itself.
 - Records must be comparable by value: plain data, as a data service returns.
-- Writes are not covered. A write made while the connection is away may be buffered by the transport and sent when it returns, after the resync. That is not designed yet.
+- Writes are not covered. A transport may hold a write made while the connection is away and send it when the connection returns. socket.io sends what it holds before it reports the connection, so before the resync fetches: the store ends with what the data service holds, but the write may be stale by then and replace a newer value. `FeathersConnection` limits how long a call is held (`requestTimeout`), and rejects it after that. What the owner of a write that failed does is not designed yet.
 - A resync that fails while the connection stays up is not tried again until the next reconnect.

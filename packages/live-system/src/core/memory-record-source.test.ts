@@ -33,6 +33,15 @@ describe('reading', () => {
         expect(source.get('missing')).rejects.toThrow("No record with the ID 'missing'")
     })
 
+    test('isNotFound() tells the error of a missing record from any other', async () => {
+        const source = new MemoryRecordSource<Item>([first])
+        const error = await source.get('missing').catch((error: unknown) => error)
+
+        expect(source.isNotFound(error)).toBe(true)
+        expect(source.isNotFound(new Error("No record with the ID 'missing'"))).toBe(false)
+        expect(source.isNotFound(undefined)).toBe(false)
+    })
+
     test('records are handed out as copies', async () => {
         const source = new MemoryRecordSource<Item>([first])
 

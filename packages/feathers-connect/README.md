@@ -130,11 +130,13 @@ Delete `try.ts` when you are done.
 new FeathersConnection({
     url: 'http://localhost:3030',
     connectTimeout: 5000,
+    requestTimeout: 10000,
 })
 ```
 
 - `url`: the data service's address.
 - `connectTimeout`: how long `connect()` waits, in milliseconds. Optional, 5000 by default.
+- `requestTimeout`: how long a call to the data service waits for its answer, in milliseconds. Optional, 10000 by default. See [calls that are not answered](#calls-that-are-not-answered).
 
 Creating a connection does not connect it. `connection.url` is the address it was given.
 
@@ -192,6 +194,7 @@ Each call returns a new record source. They share the connection.
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
 | `find(): Promise<T[]>`                                                                     | every record, or every record matching the fixed `query`                                    |
 | `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                                  |
+| `isNotFound(error): boolean`                                                               | whether what a call rejected with is Feathers' `NotFound`: the record does not exist        |
 | `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one          |
 | `update(id, data): Promise<T>`                                                             | replaces a record                                                                           |
 | `patch(id, data): Promise<T>`                                                              | changes some fields of a record                                                             |
@@ -200,6 +203,18 @@ Each call returns a new record source. They share the connection.
 | `onReconnected(listener)`                                                                  | hear the connection being made again after it was lost, see [onReconnected](#onreconnected) |
 
 A call that fails rejects with Feathers' error as it arrived: a missing record gives an error with the `name` `'NotFound'` and the `code` `404`.
+
+#### Calls That Are Not Answered
+
+A call that gets no answer rejects with an `Error`, so nothing waits for the data service forever:
+
+| the call                                 | rejects                                                       |
+| ---------------------------------------- | ------------------------------------------------------------- |
+| is not answered within `requestTimeout`  | then, with `operation has timed out`                          |
+| is under way when the connection is lost | at once, with `socket has been disconnected`                  |
+| is made while the connection is away     | after `requestTimeout`, unless the connection is back by then |
+
+A call made while the connection is away is held, and sent once the connection is back, before `onReconnected` is called. After `requestTimeout` it is rejected and no longer sent. A write that was under way when the connection was lost may have been made all the same: the data service had it, and only its answer was lost.
 
 A listener hears the changes the data service publishes to this connection, including those this client made itself. The same function subscribed twice is two subscriptions.
 

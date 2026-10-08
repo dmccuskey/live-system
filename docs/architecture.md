@@ -774,6 +774,7 @@ A record source provides access to one kind of record. It is not the whole data 
 interface RecordSource<T extends { id: string }> {
     find(): Promise<T[]>
     get(id: string): Promise<T>
+    isNotFound(error: unknown): boolean
 
     create(data: Omit<T, 'id'> & { id?: string }): Promise<T>
     update(id: string, data: T): Promise<T>
@@ -790,6 +791,8 @@ interface RecordSource<T extends { id: string }> {
 ```
 
 A record has a string `id`. A record to create may leave it out, and the source then assigns one, as Feathers does.
+
+`get` rejects when the record does not exist, and `isNotFound(error)` says whether what a call rejected with means that. Any other failure, such as a lost connection, says nothing of the record.
 
 `onReconnected` is called when the source was lost and is reached again, never for the first connection. Change events may have been missed meanwhile, so whatever loaded records from the source fetches them again.
 

@@ -126,6 +126,15 @@ describe('calls', () => {
 
         expect(source.get('missing')).rejects.toBe(error)
     })
+
+    test("isNotFound() tells Feathers' NotFound from any other failure", () => {
+        const { source } = setup()
+
+        expect(source.isNotFound(Object.assign(new Error('No record'), { name: 'NotFound', code: 404 }))).toBe(true)
+        expect(source.isNotFound(Object.assign(new Error('Bad'), { name: 'BadRequest', code: 400 }))).toBe(false)
+        expect(source.isNotFound(new Error('operation has timed out'))).toBe(false)
+        expect(source.isNotFound(undefined)).toBe(false)
+    })
 })
 
 describe('listeners', () => {
