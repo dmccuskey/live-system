@@ -524,19 +524,19 @@ Examples include:
 - workflows
 - sessions
 
-A record holds the object's state, including the state that changes as the system runs:
+A record holds the object's state, including the state that changes as the system runs. In the [demo](architecture-demo.md), a user's record holds how it behaves, which is fixed, and how frustrated it is, which changes:
 
 ```ts
-interface VirtualServerRecord {
+interface UserRecord {
     id: string
-    cpuCapacity: number
-    memoryCapacity: number
-    utilization: number
-    activeCommands: number
+    name: string
+    commandsPerMinute: number
+    commandMix: CommandMix
+    frustration: number
 }
 ```
 
-The corresponding live object reads that record from the store by its ID, without keeping a copy, and writes it through the record source. It additionally holds what cannot be stored:
+The corresponding live object keeps the record's ID, not the record. It reads the record from the store by that ID, where it is always current, and writes through the record source. It additionally holds what cannot be stored:
 
 ```text
 timers
@@ -558,6 +558,131 @@ Live Object
 A manager creates and destroys the live object.
 
 The object manages what happens while it exists.
+
+### The Object and Its Record
+
+A change to a record reaches its live object through the store, never through its manager: the manager does not pass a changed record on. How the object treats a field depends on who writes it:
+
+| The field is written by                         | The object                                                                                                     |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| the object itself (a user's frustration)        | keeps the value in memory, where it is current, writes it through the record source, and does not read it back |
+| someone else (a user's rate, were it to change) | reads it from the store when it needs it, or watches it there, and keeps no copy                               |
+
+The object does not read back what it writes, because the store may be a moment behind it: a write waits in [`debouncePatch`](#reactive-state), or is on its way to the data service and back. The one time it reads its own field is in `init()`, to learn what an earlier run left in the record.
+
+### An Example
+
+The demo's `VirtualUser` is the live object of a user record. It sends commands at its record's rate, hears what becomes of them, and keeps its frustration. Here it is, trimmed to what shows the pattern ([the whole of it](../examples/virtual-infrastructure/live-server/src/virtual-user.ts)):
+
+```ts
+class VirtualUser extends LiveObject {
+    readonly id: string
+    #records: RecordStore<UserRecord>
+    #context: DemoContext
+    #frustration = 0
+    #cancelTimer: CancelTimer | undefined
+    #subscriptions: Unsubscribe[] = []
+    #write: DebouncedPatch<UserRecord>
+
+    constructor(
+        id: string,
+        records: RecordStore<UserRecord>,
+        source: RecordSource<UserRecord>,
+        context: DemoContext,
+        options?: LiveObjectOptions,
+    ) {
+        super(options)
+        this.id = id
+        this.#records = records
+        this.#context = context
+        this.#write = debouncePatch<UserRecord>(data => source.patch(this.id, data), WRITE_DELAY, {
+            clock: context.clock,
+        })
+    }
+
+    // No command outlives the live server, so what the record says of an earlier run is cleared
+    override async init() {
+        if ((this.#record?.frustration ?? 0) !== 0) this.#write.patch({ frustration: 0 })
+
+        await this.#write.flush()
+    }
+
+    // Begins to listen for what becomes of its commands
+    override start() {
+        this.#subscriptions.push(
+            this.#context.events.on('commandRefused', event => {
+                if (event.userId === this.id) this.#refused(event)
+            }),
+            // and likewise 'commandQueued', 'commandStarted' and 'commandFinished'
+        )
+    }
+
+    // Begins to act
+    override run() {
+        this.#schedule()
+    }
+
+    protected override release() {
+        this.#cancelTimer?.()
+        this.#cancelTimer = undefined
+        this.#write.cancel()
+
+        for (const unsubscribe of this.#subscriptions.splice(0)) unsubscribe()
+    }
+
+    // The record as the store has it now. There is none once the user has been removed.
+    get #record() {
+        return this.#records.get(this.id)
+    }
+
+    // Waits a random time, the mean of which gives the user's rate, then sends a command and waits again
+    #schedule() {
+        const rate = this.#record?.commandsPerMinute ?? 0
+
+        if (this.isDestroyed || !(rate > 0)) return
+
+        const mean = 60_000 / rate
+        const delay = -Math.log(1 - this.#context.random()) * mean
+
+        this.#cancelTimer = this.#context.clock.after(delay, () => {
+            this.#send()
+            this.#schedule()
+        })
+    }
+
+    #send() {
+        const record = this.#record
+
+        if (!record) return
+
+        const type = pickCommandType(record.commandMix, this.#context.random())
+
+        this.#context.events.emit('commandRequested', { commandId: crypto.randomUUID(), userId: this.id, type })
+    }
+
+    #refused(event: CommandRefusedEvent) {
+        if (event.reason === 'queue_full') this.#set(afterRefused(this.#frustration))
+    }
+
+    #set(frustration: number) {
+        if (frustration === this.#frustration) return
+
+        this.#frustration = frustration
+        this.#write.patch({ frustration })
+    }
+}
+```
+
+Each of the four things a live object has is there:
+
+| has       | in `VirtualUser`                                                                                                |
+| --------- | --------------------------------------------------------------------------------------------------------------- |
+| identity  | `id`, its record's ID                                                                                           |
+| state     | its record, read from the store, and its frustration, which it keeps and writes back with `debouncePatch`       |
+| behavior  | `#schedule()` and `#send()`: nothing tells it to send a command                                                 |
+| lifecycle | `init()`, `start()` and `run()`, each with [its own work](#each-phase-has-its-work), and `release()` at the end |
+
+It knows nothing of the servers. It asks for a command to be run with an event on the [event bus](#the-event-bus), and hears of the outcome the same way. Its timer is the context's [clock](#time), so a test can move the time by hand.
 
 ### Time
 
@@ -603,18 +728,14 @@ Object ownership follows a simple rule:
 `LiveObjectManager` does the owning. It keeps the objects by their record's ID, creates one when a record appears, and destroys it when the record is removed or the manager stops. The domain manager says only how an object is made:
 
 ```ts
-class ServerManager extends LiveObjectManager<VirtualServerRecord, VirtualServer, AppContext> {
-    protected createObject(record: VirtualServerRecord, options: LiveObjectOptions) {
-        return new VirtualServer(record.id, this.records, this.source, options)
-    }
-
-    restart(params: RouteParams) {
-        return this.getObject(params.id)?.restart()
+class UserManager extends LiveObjectManager<UserRecord, VirtualUser, DemoContext> {
+    protected override createObject(record: UserRecord, options: LiveObjectOptions) {
+        return new VirtualUser(record.id, this.records, this.source, this.context, options)
     }
 }
 ```
 
-`createObject` only constructs. The `options` carry the `onDestroyed` callback through which the manager hears of the object's end, and the object passes them to `LiveObject`.
+`createObject` only constructs. The `options` carry the `onDestroyed` callback through which the manager hears of the object's end, and the object passes them to `LiveObject`. The manager reaches one of its objects with `getObject(id)`, and all of them through `objects`.
 
 An object starts in step with its manager. `LiveObject` has `init()`, `start()` and `run()`, which do nothing unless overridden:
 
@@ -626,11 +747,11 @@ An object whose step fails is destroyed and reported to the manager's `objectFai
 The object performs its own cleanup. `LiveObject`, the base class, provides `destroy()`: it does nothing the second time it is called, calls the object's `release()`, and then tells the owner through `onDestroyed`. The object says what there is to release:
 
 ```ts
-class VirtualServer extends LiveObject {
-    protected release() {
-        this.stopTimers()
-        this.removeListeners()
-        this.cancelPendingWork()
+class VirtualUser extends LiveObject {
+    protected override release() {
+        this.#cancelTimer?.() // its timer
+        this.#write.cancel() // its pending write
+        for (const unsubscribe of this.#subscriptions.splice(0)) unsubscribe() // its listeners
     }
 }
 ```
