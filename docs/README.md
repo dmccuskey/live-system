@@ -12,7 +12,7 @@ New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the d
 
 ## Contribute
 
-- [Development](development.md): the current baseline, how to build and test, the branch workflow, and possible future changes
+- [Development](development.md): the current baseline, the design guidelines, how to build and test, the branch workflow, and possible future changes
 
 ## Project Structure
 

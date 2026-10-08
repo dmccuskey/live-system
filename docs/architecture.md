@@ -223,24 +223,35 @@ The important distinction is that readiness should be based on an actual readine
 
 ### INITIALIZED
 
-Managers have loaded their initial state and established their required resources.
+Managers have loaded their own records and rebuilt their live objects from them.
+
+Nothing watches or acts yet: every store is being filled.
 
 ### STARTED
 
-Managers have started active behavior.
+Managers and live objects watch what is within the system.
 
 Examples:
 
 - event subscriptions installed
-- timers started
-- background activity enabled
-- live objects created
+- watches on the stores installed
+
+Every store is loaded by now, so whatever a manager watches is there to be found.
 
 ### RUNNING
 
-The application is actively operating.
+The application is actively operating: managers and live objects act, and communicate with the outside world.
+
+Examples:
+
+- timers started
+- background activity enabled
+- first commands sent
+- connections to outside services in use
 
 At this point the system is expected to remain alive and respond to commands, events, timers, and changes in state.
+
+What a manager does in each phase is under [Each Phase Has Its Work](#each-phase-has-its-work).
 
 ### STOPPED
 
@@ -370,6 +381,8 @@ abstract class BaseManager<C = unknown> {
 }
 ```
 
+### Each Phase Has Its Work
+
 Each phase has its work, and keeping to it is what makes the order of the managers irrelevant:
 
 | Phase     | What a manager and its live objects do                                                  |
@@ -378,7 +391,13 @@ Each phase has its work, and keeping to it is what makes the order of the manage
 | `start()` | begin to watch what is within the system: the event bus, the stores                     |
 | `run()`   | begin to act, and to communicate with the outside world, for example a stock market API |
 
-Every manager has finished a phase before any begins the next. So a manager that announces something in `run()` is heard by every manager that began to listen in `start()`, whichever was added first.
+Every manager has finished a phase before any begins the next. So a manager that announces something in `run()` is heard by every manager that began to listen in `start()`, whichever was added first. In the same way, a manager that watches another's store in `start()` finds its records there, because every manager loaded its own in `init()`.
+
+The order the managers are added in should therefore never matter. A comment that explains why one manager is added before another is a sign that something is done in the wrong phase.
+
+For example, in the [demo](architecture-demo.md#settings-and-status) the `ServerManager` begins to watch the settings store in `start()` and begins to sample the load in `run()`, and the virtual users send their first commands in `run()`.
+
+### The Context
 
 A manager receives as little as possible. The context holds only what every manager shares. Its type is the application's own, since the events are the application's choice:
 
@@ -392,6 +411,8 @@ interface AppContext {
 The application's managers extend `BaseManager<AppContext>`, and the system is a `LiveSystem<AppContext>`.
 
 The event bus is passed in rather than reached for globally, so a test can give a manager its own. The Pinia instance holds the application's local reactive state, one store per kind of record.
+
+### Routes
 
 The router is not in the context. A manager declares the commands it handles, and the system registers them when the manager is added:
 
@@ -426,6 +447,8 @@ restart(params: RouteParams, data: { force: boolean }) {
 
 The router lives in `live-system/server`, and `core` knows it only as a `RouteRegistry`, an interface with `register()` and `removeManager()`.
 
+### Managers of Records
+
 A manager that works with records also receives the record source for its one kind of record, and the store it mirrors them into:
 
 ```ts
@@ -452,6 +475,28 @@ When its record source reports that it was lost and is reached again, a `DataMan
 A manager whose records each have a live object extends `LiveObjectManager<T, O>`, which is a `DataManager<T>` that also creates, starts and destroys the objects (see [Object Ownership](#object-ownership)). A web app's managers only mirror records, so they extend `DataManager<T>`.
 
 Managers should not assume that the application uses Feathers, SQLite, HTTP, or any other particular technology for its data or transport.
+
+### A Record per Manager
+
+Some records describe a manager, not a thing the application has many of: its settings, or the status it reports. A manager of such records follows these rules:
+
+- **It is not written for a single record**, even while there is only one. It holds a record per manager, so the pattern is easy to see and to extend.
+- **Each record carries the key of the manager it belongs to**, in a `key` property. For settings, that is the manager that follows them. For a status, it is the manager that provides the data. The record is found by its `key`.
+- **The `id` is the data service's to give**, as for every other record. A meaningful name is a property of its own, never the ID.
+- **The required records are a table in the protocol**, by key, each with its defaults.
+- **The manager ensures the required records in `init()`**, once its records are loaded: it creates the record of every key that has none. No other manager then waits for its record to appear.
+- **A manager that reads such a record still has defaults for a missing one.** Someone may delete it by hand during development. The defaults are the same table's.
+
+```ts
+// protocol/settings/settings.constants.ts
+const DEFAULT_SETTINGS: Record<SettingsKey, Omit<SettingsRecord, 'id'>> = {
+    servers: { key: 'servers', scalingMode: 'automatic', maxUtilization: 0.75 },
+}
+```
+
+The table is typed by its keys, so a new key without defaults is a type error and a record cannot be forgotten.
+
+The demo's `SettingsManager` and `StatusManager` are written this way ([Demo Architecture](architecture-demo.md#settings-and-status)).
 
 Decision: [ADR 005](decisions/005-manager-capabilities.md).
 
@@ -717,6 +762,31 @@ reactive projection
    └── web app: managers react, and the Vue UI updates
 ```
 
+### Sharing Data: the Store First
+
+The store is how an application shares its data. It is there so that every part can react to any of the data.
+
+- **Every store is a projection of the data service.** A manager writes to the data service through its record source. The change comes back as an event of the service, and the manager writes it into the store. A manager never changes the store on its own.
+- **A part that needs data another part owns watches the store.** It does not ask the manager that owns the data, and it needs no event for it. An event on the bus that repeats what the store already says is unnecessary.
+- **A watch on the store may be synchronous** (`flush: 'sync'`), so that a change is in force as soon as the store has it.
+
+```ts
+// in the ServerManager, which follows settings that the SettingsManager owns
+async start() {
+    const settings = useSettingsStore(this.context.pinia)
+
+    this.stopWatching = watch(
+        () => Object.values(settings.records).find(record => record.key === 'servers'),
+        record => this.settingsChanged(record ?? DEFAULT_SETTINGS.servers),
+        { immediate: true, flush: 'sync' },
+    )
+}
+```
+
+The watch begins in `start()`, when every store is loaded ([Each Phase Has Its Work](#each-phase-has-its-work)).
+
+What does not fit the store goes over the event bus, which is for "special" communication ([Event Sources](#event-sources)).
+
 Decisions: [ADR 011](decisions/011-plain-typescript-vue-reactivity.md), [ADR 007](decisions/007-data-service-source-of-truth.md).
 
 ## Commands
@@ -760,6 +830,14 @@ The command router is therefore not necessarily a REST router.
 It is a **command dispatcher**.
 
 HTTP POST, WebSocket messages, internal method calls, or other transports may be adapters around the command system.
+
+### Who Sends Commands
+
+Routes are for what comes in from outside: they are how an application's web apps make changes to the system, for example a user who creates a watchlist in a trading application. As a rule of thumb, nothing inside the system sends a command, and nothing calls a manager directly.
+
+- **A manager does not reach another manager through a route.** Building a command to call what runs in the same process is cumbersome, and a route is not written for it.
+- **A manager does not call another manager's methods.** Nothing prevents it, but in general it should not happen, and a manager is given no reference to the others: the [context](#the-context) holds the event bus and the stores, not the system or its managers.
+- **Inside the system, the parts react.** A part that needs data another part owns watches the store ([Sharing Data: the Store First](#sharing-data-the-store-first)), and what does not fit the store goes over the event bus ([Event Sources](#event-sources)). Neither side then knows the other, so one can change or be left out without the other noticing.
 
 ### The Router
 
@@ -867,13 +945,12 @@ events.on('server.overloaded', event => {
 })
 ```
 
-The event bus is a tool LiveSystem provides, not a requirement. It is for domain events between parts that should not know each other, such as:
+The event bus is a tool LiveSystem provides, not a requirement. Data is shared through the store first ([Sharing Data: the Store First](#sharing-data-the-store-first)), and the event bus is for "special" communication between parts that should not know each other. There are two cases so far:
 
-```text
-server.overloaded
-server.drained
-pipeline.completed
-```
+- **Live objects communicating among themselves, as live objects.** In the demo, the virtual users' commands and the servers' answers.
+- **A part reporting data for a record it does not own, to the manager that owns it.** In the demo, the `ServerManager` announces `servers.queueChanged`, and the `StatusManager` writes the status record. The part that has the data does not write another manager's record itself.
+
+An event that reports a manager's own status is named after the manager (`servers.queueChanged`), so that another manager's status can be told apart from it.
 
 An application whose record changes and reactive state already say everything needs no event bus.
 
