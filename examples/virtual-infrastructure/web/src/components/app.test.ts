@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { mount } from '@vue/test-utils'
 import { createAddUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
 import { nextTick } from 'vue'
-import { useSettingsStore, useStatusStore } from '../stores.ts'
-import { createTestApp, until } from '../test-support.ts'
+import { useManagerStore } from '../stores.ts'
+import { createTestApp, managerRecord, until } from '../test-support.ts'
 import App from './App.vue'
 import SystemStatus from './SystemStatus.vue'
 
@@ -127,10 +127,10 @@ describe('SystemStatus', () => {
         wrapper.unmount()
     })
 
-    test('shows the utilization and the queue of the status record', () => {
+    test("shows the utilization and the queue of the server manager's record", () => {
         const { pinia, global } = createTestApp()
 
-        useStatusStore(pinia).load([{ id: 'x', key: 'servers', queueLength: 3, waitingForRoom: 1, utilization: 0.82 }])
+        useManagerStore(pinia).load([managerRecord({ queueLength: 3, waitingForRoom: 1, utilization: 0.82 })])
 
         const wrapper = mount(SystemStatus, { global })
 
@@ -143,10 +143,10 @@ describe('SystemStatus', () => {
 
     test('follows the queue at once', async () => {
         const { pinia, global } = createTestApp()
-        const store = useStatusStore(pinia)
+        const store = useManagerStore(pinia)
         const wrapper = mount(SystemStatus, { global })
 
-        store.set({ id: 'x', key: 'servers', queueLength: 4, waitingForRoom: 4, utilization: 0 })
+        store.set(managerRecord({ queueLength: 4, waitingForRoom: 4 }))
         await nextTick()
 
         expect(text(wrapper, 'queue-capacity')).toBe('4')
@@ -156,13 +156,13 @@ describe('SystemStatus', () => {
 
     test("follows the utilization at once: the average is the record's", async () => {
         const { pinia, global } = createTestApp()
-        const store = useStatusStore(pinia)
+        const store = useManagerStore(pinia)
 
-        store.load([{ id: 'x', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.8 }])
+        store.load([managerRecord({ utilization: 0.8 })])
 
         const wrapper = mount(SystemStatus, { global })
 
-        store.set({ id: 'x', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.4 })
+        store.set(managerRecord({ utilization: 0.4 }))
         await nextTick()
 
         expect(text(wrapper, 'utilization')).toBe('40%')
@@ -172,22 +172,20 @@ describe('SystemStatus', () => {
 
     test('marks the utilization when it is above the maximum of automatic mode', async () => {
         const { pinia, global } = createTestApp()
-        const status = useStatusStore(pinia)
-        const settings = useSettingsStore(pinia)
+        const store = useManagerStore(pinia)
 
-        settings.set({ id: 's', key: 'servers', scalingMode: 'automatic', maxUtilization: 0.7 })
-        status.load([{ id: 'x', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.7 }])
+        store.load([managerRecord({ maxUtilization: 0.7, utilization: 0.7 })])
 
         const wrapper = mount(SystemStatus, { global })
         const classes = () => wrapper.get('[data-test="utilization"]').classes()
 
         expect(classes()).not.toContain('over')
 
-        status.set({ id: 'x', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0.71 })
+        store.set(managerRecord({ maxUtilization: 0.7, utilization: 0.71 }))
         await nextTick()
         expect(classes()).toContain('over')
 
-        settings.set({ id: 's', key: 'servers', scalingMode: 'manual', maxUtilization: 0.7 })
+        store.set(managerRecord({ scalingMode: 'manual', maxUtilization: 0.7, utilization: 0.71 }))
         await nextTick()
         expect(classes()).not.toContain('over')
 

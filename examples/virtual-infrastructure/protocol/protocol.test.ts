@@ -1,4 +1,13 @@
 import { expect, test } from 'bun:test'
+import { createUpdateManagerCommand } from '@virtual-infrastructure/protocol/managers/managers.commands'
+import {
+    DEFAULT_MANAGER_RECORDS,
+    MANAGER_KEYS,
+    MAX_MAX_UTILIZATION,
+    MIN_MAX_UTILIZATION,
+} from '@virtual-infrastructure/protocol/managers/managers.constants'
+import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/managers.record'
+import { MANAGER_ROUTES } from '@virtual-infrastructure/protocol/managers/managers.routes'
 import {
     createAddServerCommand,
     createRemoveServerCommand,
@@ -20,16 +29,6 @@ import {
 import { SERVER_ROUTES } from '@virtual-infrastructure/protocol/servers/servers.routes'
 import { DATA_SERVICE_PORT, LIVE_SERVER_PORT, SERVICES } from '@virtual-infrastructure/protocol/services'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
-import { createUpdateSettingsCommand } from '@virtual-infrastructure/protocol/settings/settings.commands'
-import {
-    DEFAULT_SETTINGS,
-    MAX_MAX_UTILIZATION,
-    MIN_MAX_UTILIZATION,
-    SETTINGS_KEYS,
-} from '@virtual-infrastructure/protocol/settings/settings.constants'
-import { SETTINGS_ROUTES } from '@virtual-infrastructure/protocol/settings/settings.routes'
-import { INITIAL_STATUS, STATUS_KEYS } from '@virtual-infrastructure/protocol/status/status.constants'
-import type { StatusRecord } from '@virtual-infrastructure/protocol/status/status.record'
 import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
 import {
     MAX_COMMANDS_PER_MINUTE,
@@ -40,7 +39,7 @@ import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.re
 import { USER_ROUTES } from '@virtual-infrastructure/protocol/users/users.routes'
 
 test('there is a service path for each domain', () => {
-    expect(SERVICES).toEqual({ users: 'users', servers: 'servers', settings: 'settings', status: 'status' })
+    expect(SERVICES).toEqual({ users: 'users', servers: 'servers', managers: 'managers' })
 })
 
 test('the data service has a default port', () => {
@@ -74,10 +73,9 @@ test.each([
     'servers/servers.routes',
     'servers/servers.commands',
     'servers/servers.constants',
-    'settings/settings.routes',
-    'settings/settings.commands',
-    'settings/settings.constants',
-    'status/status.constants',
+    'managers/managers.routes',
+    'managers/managers.commands',
+    'managers/managers.constants',
 ])('%s loads', async path => {
     expect(await import(`@virtual-infrastructure/protocol/${path}`)).toBeDefined()
 })
@@ -127,35 +125,33 @@ test('a user may have three commands running and one waiting', () => {
     expect(MAX_QUEUED_PER_USER).toBe(1)
 })
 
-test('a settings record is keyed by the manager it is for', () => {
-    expect(SETTINGS_KEYS).toEqual({ servers: 'servers' })
-    expect(DEFAULT_SETTINGS.servers).toEqual({
-        key: SETTINGS_KEYS.servers,
+test('a manager record is keyed by the manager it belongs to, and holds what is set for it and what it reports', () => {
+    const record: ManagerRecord = { id: 'm1', ...DEFAULT_MANAGER_RECORDS.servers }
+
+    expect(MANAGER_KEYS).toEqual({ servers: 'servers' })
+    expect(DEFAULT_MANAGER_RECORDS.servers).not.toHaveProperty('id')
+    expect(record).toEqual({
+        id: 'm1',
+        key: 'servers',
         scalingMode: 'automatic',
         maxUtilization: 0.75,
+        queueLength: 0,
+        waitingForRoom: 0,
+        utilization: 0,
     })
-    expect(DEFAULT_SETTINGS.servers).not.toHaveProperty('id')
 })
 
 test('the default maximum utilization is one the Demo User could set', () => {
-    expect(DEFAULT_SETTINGS.servers.maxUtilization).toBeGreaterThanOrEqual(MIN_MAX_UTILIZATION)
-    expect(DEFAULT_SETTINGS.servers.maxUtilization).toBeLessThanOrEqual(MAX_MAX_UTILIZATION)
+    expect(DEFAULT_MANAGER_RECORDS.servers.maxUtilization).toBeGreaterThanOrEqual(MIN_MAX_UTILIZATION)
+    expect(DEFAULT_MANAGER_RECORDS.servers.maxUtilization).toBeLessThanOrEqual(MAX_MAX_UTILIZATION)
 })
 
-test('the settings command names the settings in its route and carries the changes', () => {
-    expect(Object.values(SETTINGS_ROUTES)).toEqual(['settings/:key/update'])
-    expect(createUpdateSettingsCommand(SETTINGS_KEYS.servers, { scalingMode: 'manual' })).toEqual({
-        route: 'settings/servers/update',
+test('the managers command names the manager in its route and carries the changes', () => {
+    expect(Object.values(MANAGER_ROUTES)).toEqual(['managers/:key/update'])
+    expect(createUpdateManagerCommand('servers', { scalingMode: 'manual' })).toEqual({
+        route: 'managers/servers/update',
         data: { scalingMode: 'manual' },
     })
-    expect(() => createUpdateSettingsCommand('', {})).toThrow()
-})
-
-test('a status record is keyed by the manager that provides its data', () => {
-    const status: StatusRecord = { id: 'x1', ...INITIAL_STATUS.servers }
-
-    expect(STATUS_KEYS).toEqual({ servers: 'servers' })
-    expect(status).toEqual({ id: 'x1', key: 'servers', queueLength: 0, waitingForRoom: 0, utilization: 0 })
 })
 
 test('scaling down waits longer than scaling up, and its margin is below every maximum', () => {
@@ -169,10 +165,8 @@ test('scaling down waits longer than scaling up, and its margin is below every m
     expect(MIN_SERVERS).toBeLessThan(MAX_SERVERS)
 })
 
-test('every settings key has its defaults and every status key its initial status, under its own key', () => {
-    expect(Object.keys(DEFAULT_SETTINGS)).toEqual(Object.values(SETTINGS_KEYS))
-    expect(Object.keys(INITIAL_STATUS)).toEqual(Object.values(STATUS_KEYS))
+test('every manager key has its record, under its own key', () => {
+    expect(Object.keys(DEFAULT_MANAGER_RECORDS)).toEqual(Object.values(MANAGER_KEYS))
 
-    for (const [key, defaults] of Object.entries(DEFAULT_SETTINGS)) expect(defaults.key).toBe(key)
-    for (const [key, initial] of Object.entries(INITIAL_STATUS)) expect(initial.key).toBe(key)
+    for (const [key, defaults] of Object.entries(DEFAULT_MANAGER_RECORDS)) expect<string>(defaults.key).toBe(key)
 })

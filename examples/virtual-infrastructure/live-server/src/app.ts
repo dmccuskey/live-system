@@ -7,10 +7,9 @@ import type { Clock } from 'live-system/core'
 import { CommandServer, Router } from 'live-system/server'
 import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
+import { ManagerRecords } from './manager-records.ts'
 import { ServerManager } from './server-manager.ts'
-import { SettingsManager } from './settings-manager.ts'
-import { StatusManager } from './status-manager.ts'
-import { useServerStore, useSettingsStore, useStatusStore, useUserStore } from './stores.ts'
+import { useManagerStore, useServerStore, useUserStore } from './stores.ts'
 import { UserManager } from './user-manager.ts'
 
 export interface LiveServerOptions {
@@ -62,16 +61,19 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
                 disconnect: () => connection.disconnect(),
             })
 
-            system.addManager(
-                context => new StatusManager(context, connection.recordSource(SERVICES.status), useStatusStore(pinia)),
-            )
             // In any order: each loads its store in init(), begins to watch in start(), and acts in run()
             system.addManager(
-                context => new ServerManager(context, connection.recordSource(SERVICES.servers), useServerStore(pinia)),
+                context =>
+                    new ServerManager(
+                        context,
+                        connection.recordSource(SERVICES.servers),
+                        useServerStore(pinia),
+                        connection.recordSource(SERVICES.managers),
+                    ),
             )
             system.addManager(
                 context =>
-                    new SettingsManager(context, connection.recordSource(SERVICES.settings), useSettingsStore(pinia)),
+                    new ManagerRecords(context, connection.recordSource(SERVICES.managers), useManagerStore(pinia)),
             )
             system.addManager(
                 context => new UserManager(context, connection.recordSource(SERVICES.users), useUserStore(pinia)),

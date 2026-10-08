@@ -1,20 +1,20 @@
+import { createUpdateManagerCommand } from '@virtual-infrastructure/protocol/managers/managers.commands'
 import { describe, expect, test } from 'bun:test'
 import { flushPromises, mount } from '@vue/test-utils'
+import type { ScalingMode } from '@virtual-infrastructure/protocol/managers/managers.record'
 import {
     createAddServerCommand,
     createRemoveServerCommand,
 } from '@virtual-infrastructure/protocol/servers/servers.commands'
-import { createUpdateSettingsCommand } from '@virtual-infrastructure/protocol/settings/settings.commands'
-import type { ScalingMode } from '@virtual-infrastructure/protocol/settings/settings.record'
 import type { Pinia } from 'pinia'
 import { nextTick } from 'vue'
-import { useServerStore, useSettingsStore } from '../stores.ts'
-import { createTestApp, serverRecord } from '../test-support.ts'
+import { useManagerStore, useServerStore } from '../stores.ts'
+import { createTestApp, managerRecord, serverRecord } from '../test-support.ts'
 import ServerCard from './ServerCard.vue'
 import ServersPanel from './ServersPanel.vue'
 
 const setSettings = (pinia: Pinia, scalingMode: ScalingMode, maxUtilization = 0.75) =>
-    useSettingsStore(pinia).set({ id: 'x', key: 'servers', scalingMode, maxUtilization })
+    useManagerStore(pinia).set(managerRecord({ scalingMode, maxUtilization }))
 
 describe('ServersPanel', () => {
     test('says so when there are no servers', () => {
@@ -49,7 +49,7 @@ describe('ServersPanel', () => {
         expect(mount(ServersPanel, { global }).get('h2').text()).toBe('Servers (1)')
     })
 
-    test('shows the defaults while there is no settings record: automatic, 75%', () => {
+    test('shows the defaults while there is no manager record: automatic, 75%', () => {
         const { global } = createTestApp()
         const wrapper = mount(ServersPanel, { global })
 
@@ -58,7 +58,7 @@ describe('ServersPanel', () => {
         expect(wrapper.get('[data-test="max-utilization-value"]').text()).toBe('75%')
     })
 
-    test('shows the mode and the maximum utilization of the settings record, and follows it', async () => {
+    test("shows the mode and the maximum utilization of the manager's record, and follows it", async () => {
         const { pinia, global } = createTestApp()
 
         setSettings(pinia, 'manual', 0.6)
@@ -120,7 +120,7 @@ describe('ServersPanel', () => {
         await wrapper.get('[data-test="mode-manual"]').trigger('click')
         await flushPromises()
 
-        expect(sent).toEqual([createUpdateSettingsCommand('servers', { scalingMode: 'manual' })])
+        expect(sent).toEqual([createUpdateManagerCommand('servers', { scalingMode: 'manual' })])
         // The mode shown is the record's: it changes when the record does
         expect(wrapper.get('[data-test="mode-automatic"]').attributes('aria-pressed')).toBe('true')
     })
@@ -171,7 +171,7 @@ describe('ServersPanel', () => {
             await (await move(wrapper, 50)).trigger('change')
             await flushPromises()
 
-            expect(sent).toEqual([createUpdateSettingsCommand('servers', { maxUtilization: 0.5 })])
+            expect(sent).toEqual([createUpdateManagerCommand('servers', { maxUtilization: 0.5 })])
         })
 
         test('keeps its value until the record has the change', async () => {

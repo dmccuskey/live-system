@@ -2,4 +2,4 @@
 export { createWebApp, WEB_APP, type WebApp, type WebAppOptions } from './app.ts'
 export { createCommandSender, type CommandSender } from './command-sender.ts'
 export type { WebContext } from './context.ts'
-export { ServerManager, SettingsManager, StatusManager, UserManager } from './managers.ts'
+export { ManagerRecords, ServerManager, UserManager } from './managers.ts'

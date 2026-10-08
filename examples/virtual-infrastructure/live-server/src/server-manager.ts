@@ -1,6 +1,15 @@
 // ServerManager: owns the servers' existence, routes each user command to a server with room for it,
-// and in automatic mode decides how many servers there are.
+// and in automatic mode decides how many servers there are. It owns its manager record too.
 import type { CommandFinishedEvent, CommandRequestedEvent } from '@virtual-infrastructure/protocol/events'
+import {
+    DEFAULT_MANAGER_RECORDS,
+    MANAGER_KEYS,
+    MAX_MAX_UTILIZATION,
+    MIN_MAX_UTILIZATION,
+} from '@virtual-infrastructure/protocol/managers/managers.constants'
+import type { ManagerUpdate } from '@virtual-infrastructure/protocol/managers/managers.commands'
+import type { ManagerRecord, ServerManagerSettings } from '@virtual-infrastructure/protocol/managers/managers.record'
+import { MANAGER_ROUTES } from '@virtual-infrastructure/protocol/managers/managers.routes'
 import type { AddServerResult } from '@virtual-infrastructure/protocol/servers/servers.commands'
 import {
     COMMAND_TYPES,
@@ -13,11 +22,10 @@ import {
 } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVER_ROUTES } from '@virtual-infrastructure/protocol/servers/servers.routes'
-import { DEFAULT_SETTINGS, SETTINGS_KEYS } from '@virtual-infrastructure/protocol/settings/settings.constants'
-import type { SettingsRecord } from '@virtual-infrastructure/protocol/settings/settings.record'
-import { CommandError, LiveObjectManager } from 'live-system/core'
+import { CommandError, debouncePatch, fillRoute, LiveObjectManager } from 'live-system/core'
 import type {
     CancelTimer,
+    DebouncedPatch,
     LiveObjectOptions,
     RecordSource,
     RecordStore,
@@ -28,8 +36,15 @@ import type {
 import { watch } from 'vue'
 import type { DemoContext } from './context.ts'
 import { ScalingPolicy, type ScalingDecider } from './scaling-policy.ts'
-import { useSettingsStore } from './stores.ts'
+import { useManagerStore } from './stores.ts'
 import { VirtualServer } from './virtual-server.ts'
+
+// How long what the manager reports waits for another change before it is written, in milliseconds
+const WRITE_DELAY = 100
+
+const DEFAULTS = DEFAULT_MANAGER_RECORDS[MANAGER_KEYS.servers]
+
+type SettingsUpdate = ManagerUpdate<typeof MANAGER_KEYS.servers>
 
 // The number a server's name ends in
 const serverNumber = (name: string | undefined): number => Number(/(\d+)$/.exec(name ?? '')?.[1] ?? 0)
@@ -44,14 +59,23 @@ const serverNumber = (name: string | undefined): number => Number(/(\d+)$/.exec(
  * command accepted is run in the end. A user may have a few commands running
  * and one waiting: more than that is refused.
  *
- * Who decides how many servers there are is a setting. The manager watches
- * the settings store for the record with its key. In manual mode it is the Demo User, through the
- * routes. In automatic mode the routes are refused, and the manager adds a
- * server when the average utilization is above the maximum, and removes one
- * when the others would do. It keeps no more than `MAX_SERVERS`: those beyond,
- * which manual mode may have left, are removed or drained. The average is the `ScalingPolicy`'s: the manager
- * samples the load in either mode, and announces the average for the UI to show. The `SettingsManager` sees to it that the record is
- * there. Should it be missing all the same, the defaults are in force.
+ * Who decides how many servers there are is a setting. In manual mode it is
+ * the Demo User, through the routes. In automatic mode the routes are refused,
+ * and the manager adds a server when the average utilization is above the
+ * maximum, and removes one when the others would do. It keeps no more than
+ * `MAX_SERVERS`: those beyond, which manual mode may have left, are removed or
+ * drained. The average is the `ScalingPolicy`'s: the manager samples the load
+ * in either mode.
+ *
+ * The manager has a record of its own among the manager records, with its
+ * key, and is the only one to write it. The record holds what the Demo User
+ * has set, changed through the managers' route with its key, and what the manager reports of the
+ * servers as a whole for the UI to show: the queue's length and the
+ * utilization, changes close together as one write. `init()` creates the
+ * record when there is none. A setting takes effect when it comes back in the
+ * manager store, which the manager watches for its record. What it reports
+ * it does not read back. Should the record go missing from the store, the
+ * defaults are in force.
  */
 export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer, DemoContext> {
     #subscriptions: Unsubscribe[] = []
@@ -59,12 +83,17 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     #queue: CommandRequestedEvent[] = []
     // How many commands each user has running
     #running = new Map<string, number>()
-    // The queue's length as it was last announced, and how many of the commands waited for room
-    #announcedLength = 0
-    #announcedForRoom = 0
-    #settings: Omit<SettingsRecord, 'id'> = DEFAULT_SETTINGS[SETTINGS_KEYS.servers]
-    // The utilization as it was last announced
-    #announcedUtilization = 0
+    // The queue's length as it was last reported, and how many of the commands waited for room
+    #reportedLength = 0
+    #reportedForRoom = 0
+    #settings: ServerManagerSettings = DEFAULTS
+    // The utilization as it was last reported
+    #reportedUtilization = 0
+    #managerSource: RecordSource<ManagerRecord>
+    // The ID of the manager's own record, and the writes of what it reports. Set by init().
+    #recordId: string | undefined
+    #write: DebouncedPatch<ManagerRecord> | undefined
+    #isStopped = false
     #policy: ScalingDecider
     #cancelSampler: CancelTimer | undefined
     // The servers whose removal has been asked for and not yet been heard of
@@ -75,9 +104,11 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         context: DemoContext,
         source: RecordSource<ServerRecord>,
         records: RecordStore<ServerRecord>,
+        managerSource: RecordSource<ManagerRecord>,
         policy: ScalingDecider = new ScalingPolicy(),
     ) {
         super(context, source, records)
+        this.#managerSource = managerSource
         this.#policy = policy
     }
 
@@ -90,15 +121,45 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         return {
             [SERVER_ROUTES.add]: this.addServer,
             [SERVER_ROUTES.remove]: this.removeServer,
+            // The managers' route, with this manager's key
+            [fillRoute(MANAGER_ROUTES.update, { key: MANAGER_KEYS.servers })]: this.updateSettings,
         }
     }
 
-    get scalingMode(): SettingsRecord['scalingMode'] {
+    get scalingMode(): ServerManagerSettings['scalingMode'] {
         return this.#settings.scalingMode
     }
 
     /**
-     * Begins to listen for commands and to watch its settings. With no server there
+     * Loads the servers, then sees to its own record: one that is missing is
+     * created with the defaults. What a record reports is of the run it is
+     * reported in, so what it says of an earlier run is replaced.
+     */
+    override async init(): Promise<void> {
+        await super.init()
+
+        const { queueLength, waitingForRoom, utilization } = DEFAULTS
+        const record = (await this.#managerSource.find()).find(candidate => candidate.key === MANAGER_KEYS.servers)
+        const { id } = record ?? (await this.#managerSource.create({ ...DEFAULTS }))
+        const isStale =
+            record &&
+            (record.queueLength !== queueLength ||
+                record.waitingForRoom !== waitingForRoom ||
+                record.utilization !== utilization)
+
+        if (isStale) await this.#managerSource.patch(id, { queueLength, waitingForRoom, utilization })
+
+        this.#recordId = id
+        this.#write = debouncePatch<ManagerRecord>(data => this.#managerSource.patch(id, data), WRITE_DELAY, {
+            clock: this.context.clock,
+            onError: error => {
+                if (!this.#isStopped) console.error('ServerManager: a write of its record failed', error)
+            },
+        })
+    }
+
+    /**
+     * Begins to listen for commands and to watch its record for its settings. With no server there
      * is nowhere for a command to run: a first one is created.
      */
     override async start(): Promise<void> {
@@ -112,12 +173,12 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
             events.on('userRemoved', event => this.#drop(queued => queued.userId === event.userId)),
         )
 
-        const settings = useSettingsStore(this.context.pinia)
+        const managers = useManagerStore(this.context.pinia)
 
         // Sync, so the settings are in force as soon as the store has them
         this.#subscriptions.push(
             watch(
-                () => Object.values(settings.records).find(record => record.key === SETTINGS_KEYS.servers),
+                () => Object.values(managers.records).find(record => record.key === MANAGER_KEYS.servers),
                 record => this.#settingsChanged(record),
                 { immediate: true, flush: 'sync' },
             ),
@@ -153,7 +214,49 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         await this.source.remove(id)
     }
 
-    /** Stops sampling and listening and drops what waits, then destroys the servers, which aborts what runs. */
+    /** The Demo User changes the settings. One left out stays as it is. */
+    async updateSettings(_params: RouteParams, data: SettingsUpdate): Promise<void> {
+        const changes: SettingsUpdate = {}
+        const { scalingMode, maxUtilization } = data ?? {}
+
+        if (scalingMode !== undefined) {
+            if (scalingMode !== 'automatic' && scalingMode !== 'manual') {
+                throw new CommandError(
+                    'bad_request',
+                    `The scaling mode is 'automatic' or 'manual', not '${scalingMode}'`,
+                )
+            }
+
+            changes.scalingMode = scalingMode
+        }
+
+        if (maxUtilization !== undefined) {
+            if (
+                typeof maxUtilization !== 'number' ||
+                !(maxUtilization >= MIN_MAX_UTILIZATION && maxUtilization <= MAX_MAX_UTILIZATION)
+            ) {
+                throw new CommandError(
+                    'bad_request',
+                    `The maximum utilization is a number from ${MIN_MAX_UTILIZATION} to ${MAX_MAX_UTILIZATION}`,
+                )
+            }
+
+            changes.maxUtilization = maxUtilization
+        }
+
+        if (Object.keys(changes).length === 0) {
+            throw new CommandError('bad_request', 'There is nothing to change')
+        }
+
+        if (!this.#recordId) throw new CommandError('not_found', 'The servers have no settings yet')
+
+        await this.#managerSource.patch(this.#recordId, changes)
+    }
+
+    /**
+     * Stops sampling and listening and drops what waits, writes what is still to
+     * be written, then destroys the servers, which aborts what runs.
+     */
     override async stop(): Promise<void> {
         this.#cancelSampler?.()
         this.#cancelSampler = undefined
@@ -162,6 +265,9 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
 
         this.#drop(() => true)
         this.#running.clear()
+
+        this.#isStopped = true
+        await this.#write?.flush().catch(() => {})
 
         await super.stop()
     }
@@ -214,10 +320,10 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         this.#serve()
     }
 
-    // Starts what can start, and tells of the queue when that changed it
+    // Starts what can start, and reports the queue when that changed it
     #serve(): void {
         this.#start()
-        this.#announceQueue()
+        this.#reportQueue()
     }
 
     /**
@@ -279,18 +385,18 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
             this.context.events.emit('commandRefused', { ...event, reason: 'dropped' })
         }
 
-        this.#announceQueue()
+        this.#reportQueue()
     }
 
-    #announceQueue(): void {
-        const length = this.#queue.length
+    #reportQueue(): void {
+        const queueLength = this.#queue.length
         const waitingForRoom = this.#waitingForRoom().length
 
-        if (length === this.#announcedLength && waitingForRoom === this.#announcedForRoom) return
+        if (queueLength === this.#reportedLength && waitingForRoom === this.#reportedForRoom) return
 
-        this.#announcedLength = length
-        this.#announcedForRoom = waitingForRoom
-        this.context.events.emit('servers.queueChanged', { length, waitingForRoom })
+        this.#reportedLength = queueLength
+        this.#reportedForRoom = waitingForRoom
+        this.#write?.patch({ queueLength, waitingForRoom })
     }
 
     // The commands in the queue whose user could have one more running: what they wait for is room on a server
@@ -298,14 +404,14 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         return this.#queue.filter(event => (this.#running.get(event.userId) ?? 0) < MAX_RUNNING_PER_USER)
     }
 
-    // Tells of the policy's average utilization, in whole percent, when it has changed
-    #announceUtilization(): void {
+    // Reports the policy's average utilization, in whole percent, when it has changed
+    #reportUtilization(): void {
         const utilization = Math.round(this.#policy.utilization * 100) / 100
 
-        if (utilization === this.#announcedUtilization) return
+        if (utilization === this.#reportedUtilization) return
 
-        this.#announcedUtilization = utilization
-        this.context.events.emit('servers.utilizationChanged', { utilization })
+        this.#reportedUtilization = utilization
+        this.#write?.patch({ utilization })
     }
 
     // The servers that take commands: not draining, and not being removed
@@ -344,9 +450,10 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         }
     }
 
-    // The settings record with this manager's key, as the store has it now. Without one, the defaults.
-    #settingsChanged(record: SettingsRecord | undefined): void {
-        const settings = record ?? DEFAULT_SETTINGS[SETTINGS_KEYS.servers]
+    // The manager's record as the store has it now, for its settings. Without one, the defaults.
+    #settingsChanged(record: ManagerRecord | undefined): void {
+        const { scalingMode, maxUtilization } = record ?? DEFAULTS
+        const settings = { scalingMode, maxUtilization }
 
         // A mode just entered waits its full time before it decides
         if (settings.scalingMode !== this.#settings.scalingMode) this.#policy.reset()
@@ -370,7 +477,7 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
             maxUtilization: this.#settings.maxUtilization,
         })
 
-        this.#announceUtilization()
+        this.#reportUtilization()
 
         if (this.#settings.scalingMode !== 'automatic') return
 

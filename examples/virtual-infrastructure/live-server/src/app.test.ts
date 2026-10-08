@@ -1,8 +1,10 @@
 // The live server whole: a real data service, a real connection, commands over HTTP.
+import { createUpdateManagerCommand } from '@virtual-infrastructure/protocol/managers/managers.commands'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/managers.record'
 import {
     createAddServerCommand,
     createRemoveServerCommand,
@@ -10,10 +12,6 @@ import {
 import type { AddServerResult } from '@virtual-infrastructure/protocol/servers/servers.commands'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
-import { createUpdateSettingsCommand } from '@virtual-infrastructure/protocol/settings/settings.commands'
-import type { SettingsRecord } from '@virtual-infrastructure/protocol/settings/settings.record'
-import { STATUS_KEYS } from '@virtual-infrastructure/protocol/status/status.constants'
-import type { StatusRecord } from '@virtual-infrastructure/protocol/status/status.record'
 import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
 import type { AddUserResult } from '@virtual-infrastructure/protocol/users/users.commands'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
@@ -66,8 +64,7 @@ const connect = async (url: string) => {
     return {
         users: connection.recordSource<UserRecord>(SERVICES.users),
         servers: connection.recordSource<ServerRecord>(SERVICES.servers),
-        settings: connection.recordSource<SettingsRecord>(SERVICES.settings),
-        status: connection.recordSource<StatusRecord>(SERVICES.status),
+        managers: connection.recordSource<ManagerRecord>(SERVICES.managers),
     }
 }
 
@@ -154,7 +151,7 @@ describe('commands', () => {
         const { users, servers } = await quiet(url)
         const { send } = await startLiveServer(url)
 
-        await send(createUpdateSettingsCommand('servers', { scalingMode: 'manual' }))
+        await send(createUpdateManagerCommand('servers', { scalingMode: 'manual' }))
 
         const server = result(await send<AddServerResult>(createAddServerCommand()))
         const user = result(await send<AddUserResult>(createAddUserCommand()))
@@ -242,7 +239,7 @@ describe('commands', () => {
     })
 })
 
-describe('settings and scaling', () => {
+describe("the server manager's record, and scaling", () => {
     const quietUser = {
         name: 'Quiet',
         commandsPerMinute: 0,
@@ -250,9 +247,9 @@ describe('settings and scaling', () => {
         frustration: 0,
     }
 
-    test('a first start creates the settings and the status', async () => {
+    test("a first start creates the server manager's record", async () => {
         const url = await startDataService()
-        const { users, settings, status } = await connect(url)
+        const { users, managers } = await connect(url)
         // No commands, so the utilization stays as the start leaves it
         await users.create(quietUser)
 
@@ -260,29 +257,36 @@ describe('settings and scaling', () => {
 
         const id = expect.stringMatching(/^[0-9a-f-]{36}$/)
 
-        expect(await settings.find()).toEqual([{ id, key: 'servers', scalingMode: 'automatic', maxUtilization: 0.75 }])
-        expect(await status.find()).toEqual([
-            { id, key: STATUS_KEYS.servers, queueLength: 0, waitingForRoom: 0, utilization: 0 },
+        expect(await managers.find()).toEqual([
+            {
+                id,
+                key: 'servers',
+                scalingMode: 'automatic',
+                maxUtilization: 0.75,
+                queueLength: 0,
+                waitingForRoom: 0,
+                utilization: 0,
+            },
         ])
     })
 
     test('a second start keeps the settings', async () => {
         const url = await startDataService()
-        const { settings } = await connect(url)
+        const { managers } = await connect(url)
         const first = await startLiveServer(url)
 
-        await first.send(createUpdateSettingsCommand('servers', { scalingMode: 'manual', maxUtilization: 0.5 }))
+        await first.send(createUpdateManagerCommand('servers', { scalingMode: 'manual', maxUtilization: 0.5 }))
         await first.liveServer.stop()
 
         const second = await startLiveServer(url)
 
-        expect(await settings.find()).toMatchObject([{ key: 'servers', scalingMode: 'manual', maxUtilization: 0.5 }])
+        expect(await managers.find()).toMatchObject([{ key: 'servers', scalingMode: 'manual', maxUtilization: 0.5 }])
         expect(result(await second.send<AddServerResult>(createAddServerCommand())).id).toBeDefined()
     })
 
     test('the settings are changed over HTTP, and decide whether servers may be added by hand', async () => {
         const url = await startDataService()
-        const { users, settings } = await connect(url)
+        const { users, managers } = await connect(url)
         await users.create(quietUser)
         const { send } = await startLiveServer(url)
 
@@ -290,16 +294,16 @@ describe('settings and scaling', () => {
             status: 'failed',
             error: { code: 'automatic_mode' },
         })
-        expect(await send(createUpdateSettingsCommand('servers', { maxUtilization: 2 }))).toMatchObject({
+        expect(await send(createUpdateManagerCommand('servers', { maxUtilization: 2 }))).toMatchObject({
             status: 'failed',
             error: { code: 'bad_request' },
         })
 
-        expect(await send(createUpdateSettingsCommand('servers', { scalingMode: 'manual' }))).toEqual({
+        expect(await send(createUpdateManagerCommand('servers', { scalingMode: 'manual' }))).toEqual({
             status: 'accepted',
         })
 
-        expect(await settings.find()).toMatchObject([{ key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 }])
+        expect(await managers.find()).toMatchObject([{ key: 'servers', scalingMode: 'manual', maxUtilization: 0.75 }])
         expect(await send(createAddServerCommand())).toMatchObject({ status: 'accepted' })
     })
 
@@ -333,12 +337,12 @@ describe('settings and scaling', () => {
         expect(await servers.find()).toHaveLength(1)
     }, 15_000)
 
-    test('the status record follows the utilization of the servers', async () => {
+    test('the record follows the utilization of the servers', async () => {
         const url = await startDataService()
-        const { users, status } = await connect(url)
+        const { users, managers } = await connect(url)
         await users.create(quietUser)
         const seen: number[] = []
-        status.onPatched(record => seen.push(record.utilization))
+        managers.onPatched(record => seen.push(record.utilization))
         const { liveServer, clock } = await startLiveServer(url)
 
         liveServer.events.emit('commandRequested', { commandId: 'c1', userId: 'someone', type: 'agentic' })
@@ -351,16 +355,16 @@ describe('settings and scaling', () => {
         expect(seen.length).toBeGreaterThan(2)
     })
 
-    test('the status record follows the queue', async () => {
+    test('the record follows the queue', async () => {
         const url = await startDataService()
-        const { users, status } = await connect(url)
+        const { users, managers } = await connect(url)
         await users.create(quietUser)
         const lengths: number[] = []
-        status.onPatched(record => lengths.push(record.queueLength))
+        managers.onPatched(record => lengths.push(record.queueLength))
         const { liveServer, send, clock } = await startLiveServer(url)
         const finished = collect(liveServer.events, 'commandFinished')
 
-        await send(createUpdateSettingsCommand('servers', { scalingMode: 'manual' }))
+        await send(createUpdateManagerCommand('servers', { scalingMode: 'manual' }))
         for (const userId of ['u1', 'u2', 'u3']) {
             liveServer.events.emit('commandRequested', { commandId: `c-${userId}`, userId, type: 'agentic' })
         }
@@ -369,7 +373,10 @@ describe('settings and scaling', () => {
         await advanceUntilArrived(clock, () => finished.length === 3)
         await advanceUntilArrived(clock, () => lengths.at(-1) === 0)
 
-        expect(lengths.filter((length, index) => length !== lengths[index - 1])).toEqual([1, 0])
+        // From the first command that waits: the change of the settings before it is a write of the record too
+        const changes = lengths.slice(lengths.indexOf(1))
+
+        expect(changes.filter((length, index) => length !== changes[index - 1])).toEqual([1, 0])
     })
 })
 

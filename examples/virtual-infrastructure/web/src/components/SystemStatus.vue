@@ -1,18 +1,17 @@
 <script setup lang="ts">
-// What the ServerManager reports of itself, from its status record.
+// What the ServerManager reports of the servers as a whole, from its record.
 import { UTILIZATION_WINDOW } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import { computed } from 'vue'
-import { useServerSettings, useServerStatus } from '../composables/records.ts'
+import { useServerManagerRecord } from '../composables/records.ts'
 import { percent } from '../format.ts'
 
 // The utilization in the record is the live server's average, the one automatic scaling goes by
-const status = useServerStatus()
+const record = useServerManagerRecord()
 const seconds = Math.round(UTILIZATION_WINDOW / 1_000)
 
 // Above the maximum that automatic scaling is set to keep
-const settings = useServerSettings()
 const isOver = computed(
-    () => settings.value.scalingMode === 'automatic' && status.value.utilization > settings.value.maxUtilization,
+    () => record.value.scalingMode === 'automatic' && record.value.utilization > record.value.maxUtilization,
 )
 </script>
 
@@ -20,15 +19,15 @@ const isOver = computed(
     <dl class="status">
         <div>
             <dt>Utilization, {{ seconds }} s average</dt>
-            <dd data-test="utilization" :class="{ over: isOver }">{{ percent(status.utilization) }}</dd>
+            <dd data-test="utilization" :class="{ over: isOver }">{{ percent(record.utilization) }}</dd>
         </div>
         <div>
             <dt>Command queue</dt>
             <dd>
                 <span class="reason">User:</span>
-                <span data-test="queue-user">{{ status.queueLength - status.waitingForRoom }}</span
+                <span data-test="queue-user">{{ record.queueLength - record.waitingForRoom }}</span
                 ><span class="reason">, Capacity:</span>
-                <span data-test="queue-capacity">{{ status.waitingForRoom }}</span>
+                <span data-test="queue-capacity">{{ record.waitingForRoom }}</span>
             </dd>
         </div>
     </dl>

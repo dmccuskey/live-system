@@ -1,4 +1,6 @@
 // What the web app's tests share: a web app without a connection, records, and waiting.
+import { DEFAULT_MANAGER_RECORDS } from '@virtual-infrastructure/protocol/managers/managers.constants'
+import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/managers.record'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import type { Command, CommandResponse } from 'live-system/core'
@@ -65,6 +67,11 @@ export function userRecord(overrides: Partial<UserRecord> = {}): UserRecord {
 
 export function serverRecord(overrides: Partial<ServerRecord> = {}): ServerRecord {
     return { id: 's1', name: 'Server 1', capacity: 10, load: 4, activeCommands: 2, isDraining: false, ...overrides }
+}
+
+/** The `ServerManager`'s record, with its defaults. */
+export function managerRecord(overrides: Partial<ManagerRecord> = {}): ManagerRecord {
+    return { id: 'm1', ...DEFAULT_MANAGER_RECORDS.servers, ...overrides }
 }
 
 /** Resolves once the condition holds. Rejects when it still does not after the timeout. */

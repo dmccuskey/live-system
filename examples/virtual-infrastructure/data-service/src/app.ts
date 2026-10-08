@@ -8,10 +8,9 @@ import { feathers, type Application, type HookContext } from '@feathersjs/feathe
 import socketio from '@feathersjs/socketio'
 // For the types of `channel` and `publish`
 import '@feathersjs/transport-commons'
+import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/managers.record'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
-import type { SettingsRecord } from '@virtual-infrastructure/protocol/settings/settings.record'
-import type { StatusRecord } from '@virtual-infrastructure/protocol/status/status.record'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { SqliteService } from './sqlite-service.ts'
 
@@ -32,8 +31,7 @@ export interface DataService {
 interface ServiceTypes {
     users: SqliteService<UserRecord>
     servers: SqliteService<ServerRecord>
-    settings: SqliteService<SettingsRecord>
-    status: SqliteService<StatusRecord>
+    managers: SqliteService<ManagerRecord>
 }
 
 /** A record without an ID gets one here, so IDs are strings whatever creates the record. */
@@ -56,9 +54,7 @@ export function createDataService(options: DataServiceOptions): DataService {
             app.configure(socketio())
             app.use(SERVICES.users, new SqliteService<UserRecord>(db, SERVICES.users))
             app.use(SERVICES.servers, new SqliteService<ServerRecord>(db, SERVICES.servers))
-
-            app.use(SERVICES.settings, new SqliteService<SettingsRecord>(db, SERVICES.settings))
-            app.use(SERVICES.status, new SqliteService<StatusRecord>(db, SERVICES.status))
+            app.use(SERVICES.managers, new SqliteService<ManagerRecord>(db, SERVICES.managers))
 
             for (const path of Object.values(SERVICES)) {
                 app.service(path).hooks({ before: { create: [assignId] } })

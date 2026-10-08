@@ -1,4 +1,7 @@
+import { createUpdateManagerCommand } from '@virtual-infrastructure/protocol/managers/managers.commands'
 import { afterEach, describe, expect, test } from 'bun:test'
+import { DEFAULT_MANAGER_RECORDS } from '@virtual-infrastructure/protocol/managers/managers.constants'
+import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/managers.record'
 import {
     createAddServerCommand,
     createRemoveServerCommand,
@@ -6,14 +9,13 @@ import {
 import type { AddServerResult } from '@virtual-infrastructure/protocol/servers/servers.commands'
 import { MAX_SERVERS, type CommandType } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
-import type { SettingsRecord } from '@virtual-infrastructure/protocol/settings/settings.record'
 import { defineRecordStore, MemoryRecordSource } from 'live-system/core'
 import type { CommandResponse, FakeClock, LiveSystem } from 'live-system/core'
 import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
 import type { ScalingDecider, ScalingDecision, ScalingSample } from './scaling-policy.ts'
 import { ServerManager } from './server-manager.ts'
-import { useSettingsStore } from './stores.ts'
+import { useManagerStore } from './stores.ts'
 import { advanceUntil, bootSystem, collect, finishedEvents } from './test-support.ts'
 
 const server = (id: string, overrides: Partial<ServerRecord> = {}): ServerRecord => ({
@@ -26,20 +28,49 @@ const server = (id: string, overrides: Partial<ServerRecord> = {}): ServerRecord
     ...overrides,
 })
 
+// The manager's own record. Manual, so the test decides on the servers.
+const own: ManagerRecord = { id: 'manager-1', ...DEFAULT_MANAGER_RECORDS.servers, scalingMode: 'manual' }
+
+/** What the manager reports: the fields of its record that are not settings. */
+const reported = ({ queueLength, waitingForRoom, utilization }: ManagerRecord) => ({
+    queueLength,
+    waitingForRoom,
+    utilization,
+})
+
 let systems: LiveSystem<DemoContext>[] = []
 
-const boot = async (records: ServerRecord[] = [], policy?: ScalingDecider) => {
+const boot = async (records: ServerRecord[] = [], policy?: ScalingDecider, managerRecords: ManagerRecord[] = [own]) => {
     const source = new MemoryRecordSource<ServerRecord>(records)
+    const managers = new MemoryRecordSource<ManagerRecord>(managerRecords)
     const booted = await bootSystem<[ServerManager]>([
         context => {
-            // As the SettingsManager has it there by the start. Manual, so the test decides on the servers.
-            announce(context, { scalingMode: 'manual' })
+            // As the store has the record by the start
+            const [record] = managerRecords
 
-            return new ServerManager(context, source, defineRecordStore<ServerRecord>('servers')(createPinia()), policy)
+            if (record) useManagerStore(context.pinia).set(record)
+
+            return new ServerManager(
+                context,
+                source,
+                defineRecordStore<ServerRecord>('servers')(createPinia()),
+                managers,
+                policy,
+            )
         },
     ])
 
     systems.push(booted.system)
+
+    // Every write of the manager's record from here on
+    const written: ManagerRecord[] = []
+
+    managers.onPatched(record => {
+        written.push(record)
+    })
+
+    /** Lets what the manager reports be written. */
+    const settle = () => booted.clock.advance(100)
 
     const { events } = booted.context
     const started = collect(events, 'commandStarted')
@@ -56,7 +87,18 @@ const boot = async (records: ServerRecord[] = [], policy?: ScalingDecider) => {
         return started.find(event => event.commandId === commandId)?.serverId
     }
 
-    return { ...booted, source, manager: booted.managers[0], request, started, refused, queued }
+    return {
+        ...booted,
+        source,
+        managers,
+        written,
+        settle,
+        manager: booted.managers[0],
+        request,
+        started,
+        refused,
+        queued,
+    }
 }
 
 const result = <R>(response: CommandResponse<R>): R => {
@@ -375,87 +417,126 @@ describe('the limits of one user', () => {
 })
 
 describe("the queue's length", () => {
-    test('it is announced each time it changes', async () => {
-        const { context, request } = await boot([server('s1', { capacity: 4 })])
-        const lengths = collect(context.events, 'servers.queueChanged')
+    test("it is written to the manager's record when it changes", async () => {
+        const { context, request, written, settle } = await boot([server('s1', { capacity: 4 })])
 
         request('agentic', 'u1')
-        expect(lengths).toEqual([])
+        await settle()
+        expect(written).toEqual([])
 
         request('agentic', 'u2')
+        await settle()
         request('agentic', 'u3')
-        expect(lengths).toEqual([
-            { length: 1, waitingForRoom: 1 },
-            { length: 2, waitingForRoom: 2 },
+        await settle()
+        expect(written.map(reported)).toEqual([
+            { queueLength: 1, waitingForRoom: 1, utilization: 0 },
+            { queueLength: 2, waitingForRoom: 2, utilization: 0 },
         ])
 
         context.events.emit('userRemoved', { userId: 'u2' })
-        expect(lengths).toEqual([
-            { length: 1, waitingForRoom: 1 },
-            { length: 2, waitingForRoom: 2 },
-            { length: 1, waitingForRoom: 1 },
-        ])
+        await settle()
+        expect(written.map(reported).at(-1)).toEqual({ queueLength: 1, waitingForRoom: 1, utilization: 0 })
+        expect(written).toHaveLength(3)
     })
 
-    test('a command that waits for its own user is not one that waits for room', async () => {
-        const { context, request, clock } = await boot([server('s1'), server('s2')])
-        const lengths = collect(context.events, 'servers.queueChanged')
-
-        for (let count = 0; count < 4; count++) request('search', 'u1')
-        expect(lengths).toEqual([{ length: 1, waitingForRoom: 0 }])
-
-        await advanceUntil(clock, () => lengths.length === 2)
-
-        expect(lengths.at(-1)).toEqual({ length: 0, waitingForRoom: 0 })
-    })
-
-    test('a refused command does not change it', async () => {
-        const { context, request } = await boot([server('s1', { capacity: 4 })])
-        const lengths = collect(context.events, 'servers.queueChanged')
+    test('changes close together are written as one, the last', async () => {
+        const { request, written, settle } = await boot([server('s1', { capacity: 4 })])
 
         request('agentic', 'u1')
         request('agentic', 'u2')
-        request('agentic', 'u2')
+        request('agentic', 'u3')
+        expect(written).toEqual([])
 
-        expect(lengths).toEqual([{ length: 1, waitingForRoom: 1 }])
+        await settle()
+
+        expect(written.map(reported)).toEqual([{ queueLength: 2, waitingForRoom: 2, utilization: 0 }])
     })
 
-    test('it is announced as empty once what waited has started', async () => {
-        const { context, request, clock } = await boot([server('s1', { capacity: 1 })])
-        const lengths = collect(context.events, 'servers.queueChanged')
+    test('the settings in the record are left as they are', async () => {
+        const { request, managers, settle } = await boot([server('s1', { capacity: 4 })])
+
+        request('agentic', 'u1')
+        request('agentic', 'u2')
+        await settle()
+
+        expect(await managers.get('manager-1')).toEqual({ ...own, queueLength: 1, waitingForRoom: 1 })
+    })
+
+    test('a command that waits for its own user is not one that waits for room', async () => {
+        const { request, written, settle, clock } = await boot([server('s1'), server('s2')])
+
+        for (let count = 0; count < 4; count++) request('search', 'u1')
+        await settle()
+        expect(written.map(reported)).toEqual([{ queueLength: 1, waitingForRoom: 0, utilization: 0 }])
+
+        await advanceUntil(clock, () => written.some(record => record.queueLength === 0))
+
+        expect(written.at(-1)).toMatchObject({ queueLength: 0, waitingForRoom: 0 })
+    })
+
+    test('a refused command does not change it', async () => {
+        const { request, written, settle } = await boot([server('s1', { capacity: 4 })])
+
+        request('agentic', 'u1')
+        request('agentic', 'u2')
+        await settle()
+        request('agentic', 'u2')
+        await settle()
+
+        expect(written.map(reported)).toEqual([{ queueLength: 1, waitingForRoom: 1, utilization: 0 }])
+    })
+
+    test('it is written as empty once what waited has started', async () => {
+        const { request, written, settle, clock } = await boot([server('s1', { capacity: 1 })])
 
         request('search', 'u1')
         request('search', 'u2')
-        await advanceUntil(clock, () => lengths.length === 2)
+        await settle()
+        expect(written.map(reported)).toEqual([{ queueLength: 1, waitingForRoom: 1, utilization: 0 }])
 
-        expect(lengths).toEqual([
-            { length: 1, waitingForRoom: 1 },
-            { length: 0, waitingForRoom: 0 },
-        ])
+        // A sample on the way writes the utilization too
+        await advanceUntil(clock, () => written.some(record => record.queueLength === 0))
+
+        expect(written.at(-1)).toMatchObject({ queueLength: 0, waitingForRoom: 0 })
     })
 
-    test('the shutdown announces it as empty', async () => {
-        const { system, context, request } = await boot([server('s1', { capacity: 4 })])
-        const lengths = collect(context.events, 'servers.queueChanged')
+    test('the shutdown writes it as empty, and nothing is written after', async () => {
+        const { system, request, written, settle, managers } = await boot([server('s1', { capacity: 4 })])
+
+        request('agentic', 'u1')
+        request('agentic', 'u2')
+        await settle()
+        await system.shutdown()
+
+        expect(written.map(record => [record.queueLength, record.waitingForRoom])).toEqual([
+            [1, 1],
+            [0, 0],
+        ])
+
+        request('agentic', 'u3')
+        await settle()
+
+        expect(written).toHaveLength(2)
+        expect(await managers.get('manager-1')).toMatchObject({ queueLength: 0, waitingForRoom: 0 })
+    })
+
+    test('what is still to be written at the shutdown is written', async () => {
+        const { system, request, managers } = await boot([server('s1', { capacity: 4 })])
 
         request('agentic', 'u1')
         request('agentic', 'u2')
         await system.shutdown()
 
-        expect(lengths).toEqual([
-            { length: 1, waitingForRoom: 1 },
-            { length: 0, waitingForRoom: 0 },
-        ])
+        // The queue was dropped by the shutdown: one write, of the last
+        expect(await managers.get('manager-1')).toMatchObject({ queueLength: 0, waitingForRoom: 0 })
     })
 })
 
-// The settings record as it arrives in the store from the data service
-const announce = (context: DemoContext, overrides: Partial<SettingsRecord> = {}) => {
-    useSettingsStore(context.pinia).set({
-        id: 'settings-1',
-        key: 'servers',
-        scalingMode: 'automatic',
-        maxUtilization: 0.75,
+// The manager's record as it arrives in the store from the data service
+const announce = (context: DemoContext, overrides: Partial<ManagerRecord> = {}) => {
+    useManagerStore(context.pinia).set({
+        id: 'manager-1',
+        ...DEFAULT_MANAGER_RECORDS.servers,
         ...overrides,
     })
 }
@@ -497,47 +578,62 @@ const aWhile = (clock: FakeClock) => clock.advance(1_000 * 5)
 const ids = async (source: MemoryRecordSource<ServerRecord>) => (await source.find()).map(record => record.id)
 
 describe('the utilization', () => {
-    test("it is the policy's average, announced after a sample when it has changed", async () => {
+    test("it is the policy's average, written after a sample when it has changed", async () => {
         const stub = stubPolicy()
-        const { context, clock } = await boot([server('s1')], stub.policy)
-        const announced = collect(context.events, 'servers.utilizationChanged')
+        const { context, clock, written, settle } = await boot([server('s1')], stub.policy)
 
         announce(context)
         stub.state.utilization = 0.4
         await stub.sampled(clock)
         await stub.sampled(clock)
+        await settle()
 
-        expect(announced).toEqual([{ utilization: 0.4 }])
+        expect(written.map(record => record.utilization)).toEqual([0.4])
 
         stub.state.utilization = 0.25
         await stub.sampled(clock)
+        await settle()
 
-        expect(announced).toEqual([{ utilization: 0.4 }, { utilization: 0.25 }])
+        expect(written.map(record => record.utilization)).toEqual([0.4, 0.25])
     })
 
-    test('it is announced in whole percent', async () => {
+    test('it is written in whole percent', async () => {
         const stub = stubPolicy()
-        const { context, clock } = await boot([server('s1')], stub.policy)
-        const announced = collect(context.events, 'servers.utilizationChanged')
+        const { clock, written, settle } = await boot([server('s1')], stub.policy)
 
         stub.state.utilization = 0.4567
         await stub.sampled(clock)
+        await settle()
         stub.state.utilization = 0.4612
         await stub.sampled(clock)
+        await settle()
 
-        expect(announced).toEqual([{ utilization: 0.46 }])
+        expect(written.map(record => record.utilization)).toEqual([0.46])
     })
 
-    test('it is announced in manual mode too', async () => {
+    test('it is written in manual mode too', async () => {
         const stub = stubPolicy()
-        const { manager, context, clock } = await boot([server('s1')], stub.policy)
-        const announced = collect(context.events, 'servers.utilizationChanged')
+        const { manager, clock, written, settle } = await boot([server('s1')], stub.policy)
 
         stub.state.utilization = 0.6
         await stub.sampled(clock)
+        await settle()
 
         expect(manager.scalingMode).toBe('manual')
-        expect(announced).toEqual([{ utilization: 0.6 }])
+        expect(written.map(record => record.utilization)).toEqual([0.6])
+    })
+
+    test('a change of the queue close to it is the same write', async () => {
+        const stub = stubPolicy()
+        const { request, clock, written, settle } = await boot([server('s1', { capacity: 4 })], stub.policy)
+
+        stub.state.utilization = 0.9
+        await stub.sampled(clock)
+        request('agentic', 'u1')
+        request('agentic', 'u2')
+        await settle()
+
+        expect(written.map(reported)).toEqual([{ queueLength: 1, waitingForRoom: 1, utilization: 0.9 }])
     })
 })
 
@@ -554,39 +650,29 @@ describe('the scaling mode', () => {
         expect(await ids(source)).toEqual(['s1', 's2'])
     })
 
-    test('with no settings record the defaults are in force', async () => {
+    test('with no record in the store the defaults are in force', async () => {
         const stub = stubPolicy()
-        const source = new MemoryRecordSource<ServerRecord>([server('s1')])
-        const booted = await bootSystem<[ServerManager]>([
-            context =>
-                new ServerManager(
-                    context,
-                    source,
-                    defineRecordStore<ServerRecord>('servers')(createPinia()),
-                    stub.policy,
-                ),
-        ])
+        const { manager, clock } = await boot([server('s1')], stub.policy, [])
 
-        systems.push(booted.system)
-        await stub.sampled(booted.clock)
-
-        expect(booted.managers[0].scalingMode).toBe('automatic')
-        expect(stub.samples.at(-1)?.maxUtilization).toBe(0.75)
-    })
-
-    test('a settings record that goes missing leaves the defaults in force', async () => {
-        const stub = stubPolicy()
-        const { manager, context, clock } = await boot([server('s1')], stub.policy)
-
-        announce(context, { scalingMode: 'manual', maxUtilization: 0.5 })
-        useSettingsStore(context.pinia).remove('settings-1')
         await stub.sampled(clock)
 
         expect(manager.scalingMode).toBe('automatic')
         expect(stub.samples.at(-1)?.maxUtilization).toBe(0.75)
     })
 
-    test('the settings record with its key in the store is its own', async () => {
+    test('a record that goes missing from the store leaves the defaults in force', async () => {
+        const stub = stubPolicy()
+        const { manager, context, clock } = await boot([server('s1')], stub.policy)
+
+        announce(context, { scalingMode: 'manual', maxUtilization: 0.5 })
+        useManagerStore(context.pinia).remove('manager-1')
+        await stub.sampled(clock)
+
+        expect(manager.scalingMode).toBe('automatic')
+        expect(stub.samples.at(-1)?.maxUtilization).toBe(0.75)
+    })
+
+    test('the record with its key in the store is its own', async () => {
         const { manager, context } = await boot([server('s1')])
 
         announce(context)
@@ -594,7 +680,7 @@ describe('the scaling mode', () => {
         expect(manager.scalingMode).toBe('automatic')
     })
 
-    test('a settings record there before the start is in force from the start', async () => {
+    test('a record there before the start is in force from the start', async () => {
         const { manager } = await boot([server('s1')])
 
         expect(manager.scalingMode).toBe('manual')
@@ -609,10 +695,10 @@ describe('the scaling mode', () => {
         expect(manager.scalingMode).toBe('manual')
     })
 
-    test('settings with another key are not', async () => {
+    test('a record with another key is not', async () => {
         const { manager, context } = await boot([server('s1')])
 
-        announce(context, { id: 'settings-2', key: 'users' })
+        announce(context, { id: 'manager-2', key: 'users' as ManagerRecord['key'], scalingMode: 'automatic' })
 
         expect(manager.scalingMode).toBe('manual')
     })
@@ -663,6 +749,150 @@ describe('the scaling mode', () => {
 
         announce(context, { scalingMode: 'manual' })
         expect(stub.counts.resets).toBe(before + 2)
+    })
+})
+
+describe("the manager's own record", () => {
+    test('with none, it is created with the defaults, under its key', async () => {
+        const { managers } = await boot([server('s1')], undefined, [])
+
+        expect(await managers.find()).toEqual([{ id: expect.any(String), ...DEFAULT_MANAGER_RECORDS.servers }])
+    })
+
+    test('the one there is, is kept with its settings', async () => {
+        const { managers } = await boot([server('s1')], undefined, [{ ...own, maxUtilization: 0.5 }])
+
+        expect(await managers.find()).toEqual([{ ...own, maxUtilization: 0.5 }])
+    })
+
+    test('what it reports of an earlier run is cleared, and its settings stay', async () => {
+        const earlier = { ...own, maxUtilization: 0.5, queueLength: 4, waitingForRoom: 2, utilization: 0.8 }
+        const { managers } = await boot([server('s1')], undefined, [earlier])
+
+        expect(await managers.find()).toEqual([{ ...own, maxUtilization: 0.5 }])
+    })
+
+    test('a record that is already clear is not written at the start', async () => {
+        const managers = new MemoryRecordSource<ManagerRecord>([own])
+        const written: ManagerRecord[] = []
+
+        managers.onPatched(record => {
+            written.push(record)
+        })
+
+        const booted = await bootSystem<[ServerManager]>([
+            context =>
+                new ServerManager(
+                    context,
+                    new MemoryRecordSource<ServerRecord>([server('s1')]),
+                    defineRecordStore<ServerRecord>('servers')(createPinia()),
+                    managers,
+                ),
+        ])
+
+        systems.push(booted.system)
+
+        expect(written).toEqual([])
+    })
+
+    test("a record with another key is left alone, and the manager's is created beside it", async () => {
+        const other = { ...own, id: 'manager-2', key: 'users' as ManagerRecord['key'], queueLength: 7 }
+        const { managers } = await boot([server('s1')], undefined, [other])
+
+        expect(await managers.find()).toEqual([other, { id: expect.any(String), ...DEFAULT_MANAGER_RECORDS.servers }])
+    })
+
+    test('a second start creates no second record', async () => {
+        const { system, source, managers } = await boot([server('s1')], undefined, [])
+
+        await system.shutdown()
+
+        const again = await bootSystem<[ServerManager]>([
+            context =>
+                new ServerManager(context, source, defineRecordStore<ServerRecord>('servers')(createPinia()), managers),
+        ])
+
+        systems.push(again.system)
+
+        expect(await managers.find()).toHaveLength(1)
+    })
+})
+
+describe('managers/servers/update', () => {
+    test('the mode is changed in the record', async () => {
+        const { managers, send } = await boot([server('s1')])
+
+        expect(await send(createUpdateManagerCommand('servers', { scalingMode: 'automatic' }))).toEqual({
+            status: 'accepted',
+        })
+
+        expect(await managers.get('manager-1')).toEqual({ ...own, scalingMode: 'automatic' })
+    })
+
+    test('the change is not in force until it comes back in the store', async () => {
+        const { manager, managers, context, send } = await boot([server('s1')])
+
+        await send(createUpdateManagerCommand('servers', { scalingMode: 'automatic' }))
+        expect(manager.scalingMode).toBe('manual')
+
+        useManagerStore(context.pinia).set(await managers.get('manager-1'))
+        expect(manager.scalingMode).toBe('automatic')
+    })
+
+    test('the maximum utilization is changed, and the mode stays', async () => {
+        const { managers, send } = await boot([server('s1')])
+
+        await send(createUpdateManagerCommand('servers', { maxUtilization: 0.9 }))
+
+        expect(await managers.get('manager-1')).toEqual({ ...own, maxUtilization: 0.9 })
+    })
+
+    test('both are changed at once', async () => {
+        const { managers, send } = await boot([server('s1')])
+
+        await send(createUpdateManagerCommand('servers', { scalingMode: 'automatic', maxUtilization: 0.3 }))
+
+        expect(await managers.get('manager-1')).toEqual({ ...own, scalingMode: 'automatic', maxUtilization: 0.3 })
+    })
+
+    test.each([
+        ['an unknown mode', { scalingMode: 'sometimes' }],
+        ['a maximum that is too low', { maxUtilization: 0.29 }],
+        ['a maximum that is too high', { maxUtilization: 0.96 }],
+        ['a maximum that is not a number', { maxUtilization: '0.5' }],
+        ['a maximum that is NaN', { maxUtilization: Number.NaN }],
+        ['nothing to change', {}],
+        ['no data', undefined],
+        ['only what is not a setting', { id: 'other', key: 'users', queueLength: 3 }],
+    ])('%s is a bad request, and nothing is written', async (_name, data) => {
+        const { managers, send } = await boot([server('s1')])
+
+        expect(await send({ route: 'managers/servers/update', data })).toMatchObject({
+            status: 'failed',
+            error: { code: 'bad_request' },
+        })
+        expect(await managers.find()).toEqual([own])
+    })
+
+    test("the route with another manager's key is not this manager's", async () => {
+        const { managers, send } = await boot([server('s1')])
+
+        expect(await send({ route: 'managers/users/update', data: { scalingMode: 'automatic' } })).toMatchObject({
+            status: 'failed',
+            error: { code: 'not_found' },
+        })
+        expect(await managers.find()).toEqual([own])
+    })
+
+    test('what is not a setting is left out of what is written', async () => {
+        const { managers, send } = await boot([server('s1')])
+
+        await send({
+            route: 'managers/servers/update',
+            data: { maxUtilization: 0.5, id: 'other', key: 'users', queueLength: 3, extra: true },
+        })
+
+        expect(await managers.find()).toEqual([{ ...own, maxUtilization: 0.5 }])
     })
 })
 
@@ -1073,7 +1303,7 @@ describe('stopping', () => {
         expect(stub.samples).toHaveLength(sampled)
     })
 
-    test('after the shutdown the settings store is no longer watched', async () => {
+    test('after the shutdown the manager store is no longer watched', async () => {
         const { system, manager, context } = await boot([server('s1')])
 
         announce(context)

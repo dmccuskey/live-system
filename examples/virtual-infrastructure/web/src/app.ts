@@ -11,8 +11,8 @@ import type { InjectionKey, Ref } from 'vue'
 import { createCommandSender } from './command-sender.ts'
 import type { CommandSender } from './command-sender.ts'
 import type { WebContext } from './context.ts'
-import { ServerManager, SettingsManager, StatusManager, UserManager } from './managers.ts'
-import { useServerStore, useSettingsStore, useStatusStore, useUserStore } from './stores.ts'
+import { ManagerRecords, ServerManager, UserManager } from './managers.ts'
+import { useManagerStore, useServerStore, useUserStore } from './stores.ts'
 
 export interface WebAppOptions {
     /** The data service's address, for example `http://localhost:3030`. */
@@ -62,10 +62,7 @@ export function createWebApp(options: WebAppOptions): WebApp {
         context => new ServerManager(context, connection.recordSource(SERVICES.servers), useServerStore(pinia)),
     )
     system.addManager(
-        context => new SettingsManager(context, connection.recordSource(SERVICES.settings), useSettingsStore(pinia)),
-    )
-    system.addManager(
-        context => new StatusManager(context, connection.recordSource(SERVICES.status), useStatusStore(pinia)),
+        context => new ManagerRecords(context, connection.recordSource(SERVICES.managers), useManagerStore(pinia)),
     )
 
     const startup = new WebStartup(system)
