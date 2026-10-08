@@ -15,6 +15,8 @@ import { UserManager } from './user-manager.ts'
 export interface LiveServerOptions {
     /** The data service's address, for example `http://localhost:3030`. */
     dataServiceUrl: string
+    /** The data service's write token, when it asks for one. */
+    writeToken?: string
     /** The port to take commands on. With 0 the system picks a free one. */
     port: number
     /** The time and the timers of the simulation. Real time, unless given. */
@@ -26,7 +28,10 @@ export interface LiveServerOptions {
 }
 
 export interface LiveServer {
-    /** Connects to the data service, boots the system and listens. Resolves with the port it listens on. */
+    /**
+     * Connects to the data service, boots the system and listens. Resolves with the port it listens on:
+     * commands are posted to `/command`, and a GET to `/health` says whether the data service is connected.
+     */
     start(): Promise<number>
     /** Stops listening, stops the managers and closes the connection. */
     stop(): Promise<void>
@@ -45,7 +50,10 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
         async start() {
             if (running) throw new Error('The live server is already started')
 
-            const connection = new FeathersConnection({ url: options.dataServiceUrl })
+            const connection = new FeathersConnection({
+                url: options.dataServiceUrl,
+                handshake: options.writeToken === undefined ? undefined : { writeToken: options.writeToken },
+            })
             const router = new Router()
             const pinia = createPinia()
 
@@ -79,7 +87,8 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
                 context => new UserManager(context, connection.recordSource(SERVICES.users), useUserStore(pinia)),
             )
 
-            const commandServer = new CommandServer({ router })
+            // In working order while the data service is connected: without it nothing is read or written
+            const commandServer = new CommandServer({ router, health: () => connection.isConnected })
 
             running = { system, commandServer }
 

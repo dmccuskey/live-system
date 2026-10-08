@@ -129,6 +129,73 @@ describe('CommandServer.handle', () => {
     })
 })
 
+describe('the health address', () => {
+    const get = (path = '/health') => new Request(`http://localhost${path}`)
+    const withHealth = (health: () => boolean | Promise<boolean>, healthPath?: string) =>
+        new CommandServer({ router: new Router(), health, healthPath })
+
+    test('is 200 while the check holds', async () => {
+        const response = await withHealth(() => true).handle(get())
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ status: 'ok' })
+        expect(response.headers.get('Cache-Control')).toBe('no-store')
+    })
+
+    test('is 503 when the check does not hold', async () => {
+        const response = await withHealth(() => false).handle(get())
+
+        expect(response.status).toBe(503)
+        expect(await response.json()).toEqual({ status: 'unavailable' })
+    })
+
+    test('the check is asked on each request, and may be asynchronous', async () => {
+        let isHealthy = true
+        const server = withHealth(async () => isHealthy)
+
+        expect((await server.handle(get())).status).toBe(200)
+        isHealthy = false
+        expect((await server.handle(get())).status).toBe(503)
+    })
+
+    test('a check that throws or rejects is 503', async () => {
+        const throwing = withHealth(() => {
+            throw new Error('No idea')
+        })
+        const rejecting = withHealth(() => Promise.reject(new Error('No idea')))
+
+        expect((await throwing.handle(get())).status).toBe(503)
+        expect((await rejecting.handle(get())).status).toBe(503)
+    })
+
+    test('the path can be chosen', async () => {
+        const server = withHealth(() => true, '/up')
+
+        expect(server.healthPath).toBe('/up')
+        expect((await server.handle(get('/up'))).status).toBe(200)
+        expect((await server.handle(get('/health'))).status).toBe(404)
+    })
+
+    test('without a check there is no health address', async () => {
+        const response = await serverWithRoutes().handle(get())
+
+        expect(response.status).toBe(404)
+    })
+
+    test('commands are taken as before', async () => {
+        const router = new Router()
+        router.register('ping', () => 'pong')
+        const server = new CommandServer({ router, health: () => true })
+
+        expect(await (await server.handle(post({ route: 'ping' }))).json()).toEqual({
+            status: 'accepted',
+            result: 'pong',
+        })
+        // Only a GET asks for the health
+        expect((await server.handle(post({ route: 'ping' }, '/health'))).status).toBe(404)
+    })
+})
+
 describe('CommandServer.listen', () => {
     let server: CommandServer | undefined
 

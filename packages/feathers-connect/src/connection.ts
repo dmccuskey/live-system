@@ -21,6 +21,11 @@ export interface FeathersConnectionOptions {
      * the connection is back, for no longer than this.
      */
     requestTimeout?: number
+    /**
+     * Sent to the data service each time the connection is made, as Socket.IO's
+     * `auth`: the data service reads it from `socket.handshake.auth`. Nothing unless given.
+     */
+    handshake?: Record<string, unknown>
 }
 
 type ConnectionListener = () => void
@@ -52,6 +57,7 @@ export class FeathersConnection {
             transports: ['websocket'],
             autoConnect: false,
             ackTimeout: options.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT,
+            auth: options.handshake,
         })
         this.#socket.on('connect', () => {
             const isReconnect = this.#hasConnected

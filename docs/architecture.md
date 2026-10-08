@@ -1021,6 +1021,8 @@ POST /command
 
 The response body is always the `CommandResponse`. The HTTP status is 200 when the command was accepted, 400 for a body that is not a command, 404 for an unknown route, 405 for anything but POST, and 500 for any other failure. `handle(request)` works on the standard `Request` and `Response`, so the same server can be mounted in another HTTP server; `listen()` uses Bun's.
 
+Given a `health` function, the server also answers a GET to `/health` (or the `healthPath` given), for whatever watches the process from outside: 200 with `{ "status": "ok" }` while the function returns true, 503 with `{ "status": "unavailable" }` when it returns false or throws. What "in working order" means is the application's to say. Without the function there is no health address.
+
 ### The CommandClient
 
 The `CommandClient` is the other end, in a web app. It posts a command to the `CommandServer` and returns its response:

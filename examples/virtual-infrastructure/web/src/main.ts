@@ -1,12 +1,12 @@
-// The web app's entry: `bun run dev`. The data service and the live server must be running.
-import { DATA_SERVICE_PORT } from '@virtual-infrastructure/protocol/services'
+// The web app's entry. The data service and the live server must be running.
 import { createApp } from 'vue'
 import { createWebApp, WEB_APP } from './app.ts'
 import App from './components/App.vue'
 
+// Both on the page's own origin: whatever serves the page (the dev server, or the server in front
+// of a build) passes `/socket.io` on to the data service and `/command` on to the live server
 const webApp = createWebApp({
-    dataServiceUrl: import.meta.env.VITE_DATA_SERVICE_URL ?? `http://${location.hostname}:${DATA_SERVICE_PORT}`,
-    // Same origin: the dev server passes it on to the live server
+    dataServiceUrl: location.origin,
     commandUrl: '/command',
 })
 

@@ -131,12 +131,14 @@ new FeathersConnection({
     url: 'http://localhost:3030',
     connectTimeout: 5000,
     requestTimeout: 10000,
+    handshake: { token: 'a secret' },
 })
 ```
 
 - `url`: the data service's address.
 - `connectTimeout`: how long `connect()` waits, in milliseconds. Optional, 5000 by default.
 - `requestTimeout`: how long a call to the data service waits for its answer, in milliseconds. Optional, 10000 by default. See [calls that are not answered](#calls-that-are-not-answered).
+- `handshake`: an object sent to the data service each time the connection is made, a reconnect included. It is Socket.IO's `auth`, so the data service reads it from `socket.handshake.auth`, for example to tell one kind of client from another. Optional, nothing by default.
 
 Creating a connection does not connect it. `connection.url` is the address it was given.
 

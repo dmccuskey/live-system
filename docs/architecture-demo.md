@@ -254,6 +254,10 @@ A manager record is found by its `key`, never by its `id`: the ID is the data se
 
 The service does not validate what it is given: only the live server writes to it.
 
+That only the live server writes can be enforced. Given a write token, the data service is read-only from outside: a client may create, change or remove a record only if it sent the same token as it connected, and the live server is the one client that has it. Every other client, the web app among them, reads and hears changes as before and is refused a write. Without a token every client may write, which suits development.
+
+The data service also answers a GET to `/health`, and so does the live server, which reports there whether it is connected to the data service.
+
 ## The Live Server
 
 The live server is a process of its own: a `LiveSystem` with a `ServerManager`, a `UserManager` and a `ManagerRecords`, which mirrors the manager records into their store, connected to the data service and taking commands over HTTP. It is the only writer of records.

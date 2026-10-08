@@ -28,16 +28,16 @@ let services: DataService[] = []
 let connections: FeathersConnection[] = []
 let folders: string[] = []
 
-const start = async (filename = ':memory:') => {
-    const service = createDataService({ port: 0, filename })
+const start = async (filename = ':memory:', writeToken?: string) => {
+    const service = createDataService({ port: 0, filename, writeToken })
 
     services.push(service)
 
     return { service, port: await service.start() }
 }
 
-const connect = async (port: number) => {
-    const connection = new FeathersConnection({ url: `http://localhost:${port}` })
+const connect = async (port: number, handshake?: Record<string, unknown>) => {
+    const connection = new FeathersConnection({ url: `http://localhost:${port}`, handshake })
 
     connections.push(connection)
     await connection.connect()
@@ -173,6 +173,133 @@ describe('events', () => {
 
         await writer.remove('u1')
         expect(await removed).toEqual({ ...alice, id: 'u1', name: 'Alicia' })
+    })
+})
+
+describe('a write token', () => {
+    const forbidden = { name: 'Forbidden', code: 403 }
+    const usersOf = async (port: number, handshake?: Record<string, unknown>) =>
+        (await connect(port, handshake)).recordSource<UserRecord>(SERVICES.users)
+
+    test('a client with the token writes', async () => {
+        const { port } = await start(':memory:', 'secret')
+        const users = await usersOf(port, { writeToken: 'secret' })
+
+        const created = await users.create(alice)
+
+        await users.patch(created.id, { frustration: 1 })
+        await users.update(created.id, { ...created, name: 'Alicia' })
+        expect(await users.get(created.id)).toMatchObject({ name: 'Alicia' })
+        await users.remove(created.id)
+        expect(await users.find()).toEqual([])
+    })
+
+    test('a client without it reads, hears changes, and is refused every write', async () => {
+        const { port } = await start(':memory:', 'secret')
+        const writer = await usersOf(port, { writeToken: 'secret' })
+        const reader = await usersOf(port)
+        const heard = next<UserRecord>(listener => reader.onCreated(listener))
+        const created = await writer.create(alice)
+
+        expect(await heard).toEqual(created)
+        expect(await reader.find()).toEqual([created])
+        expect(await reader.get(created.id)).toEqual(created)
+
+        const refused = await Promise.all(
+            [
+                reader.create(alice),
+                reader.patch(created.id, { frustration: 1 }),
+                reader.update(created.id, { ...created, name: 'Mallory' }),
+                reader.remove(created.id),
+            ].map(call =>
+                call.then(
+                    () => 'written',
+                    error => error,
+                ),
+            ),
+        )
+
+        for (const outcome of refused) expect(outcome).toMatchObject(forbidden)
+        expect(await reader.find()).toEqual([created])
+    })
+
+    test('a wrong token is refused, and so is one that is not a string', async () => {
+        const { port } = await start(':memory:', 'secret')
+
+        for (const writeToken of ['Secret', 'secret ', '', 7, null, ['secret']]) {
+            const users = await usersOf(port, { writeToken })
+            const outcome = await users.create(alice).then(
+                () => 'written',
+                error => error,
+            )
+
+            expect(outcome).toMatchObject(forbidden)
+        }
+    })
+
+    test('every service is covered', async () => {
+        const { port } = await start(':memory:', 'secret')
+        const connection = await connect(port)
+
+        for (const path of Object.values(SERVICES)) {
+            const outcome = await connection
+                .recordSource<{ id: string }>(path)
+                .create({})
+                .then(
+                    () => 'written',
+                    error => error,
+                )
+
+            expect(outcome).toMatchObject(forbidden)
+        }
+    })
+
+    test('without a token configured every client writes', async () => {
+        const { port } = await start()
+        const users = await usersOf(port)
+
+        expect(await users.create(alice)).toMatchObject({ name: 'Alice' })
+    })
+})
+
+describe('the health address', () => {
+    test('is 200 once the data service listens', async () => {
+        const { port } = await start()
+        const response = await fetch(`http://localhost:${port}/health`)
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ status: 'ok' })
+        expect(response.headers.get('Cache-Control')).toBe('no-store')
+    })
+
+    test('any other path is 404, and so is anything but GET', async () => {
+        const { port } = await start()
+
+        expect((await fetch(`http://localhost:${port}/users`)).status).toBe(404)
+        expect((await fetch(`http://localhost:${port}/health`, { method: 'POST' })).status).toBe(404)
+    })
+
+    test('clients connect as before', async () => {
+        const { port } = await start()
+
+        await fetch(`http://localhost:${port}/health`)
+
+        const connection = await connect(port)
+
+        expect(await connection.recordSource<UserRecord>(SERVICES.users).find()).toEqual([])
+    })
+
+    test('a stopped data service does not answer', async () => {
+        const { service, port } = await start()
+
+        await service.stop()
+
+        const outcome = await fetch(`http://localhost:${port}/health`).then(
+            () => 'answered',
+            () => 'refused',
+        )
+
+        expect(outcome).toBe('refused')
     })
 })
 

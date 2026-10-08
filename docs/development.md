@@ -77,6 +77,15 @@ A command is a POST to `/command`. To add a user:
 curl -X POST http://localhost:3031/command -H 'Content-Type: application/json' -d '{"route":"users/add"}'
 ```
 
+Both answer a GET to `/health`, for whatever starts or watches them. The data service answers 200 while its database does. The live server answers 200 while it is connected to the data service, and 503 while it is not:
+
+```sh
+curl http://localhost:3030/health
+curl http://localhost:3031/health
+```
+
+By default any client of the data service may write its records. To make them read-only from outside, give the data service and the live server the same `DATA_SERVICE_WRITE_TOKEN`: the live server sends it as it connects, and a client that did not send it (the web app, or anything else that reaches the data service) can read and listen but is refused every write. The web app never writes: it sends commands.
+
 Then, in a third terminal, the web app:
 
 ```sh
@@ -86,14 +95,14 @@ bun run dev
 
 Open `http://localhost:3032`. The page shows the users and the servers of the running system, and its controls send commands. To change the port, set `WEB_PORT`.
 
-The web app is served by [Vite](https://vite.dev)'s dev server. Two addresses are involved:
+The web app is served by [Vite](https://vite.dev)'s dev server, and talks to its own origin only. The dev server passes two paths on:
 
-| What     | Where it goes                                                                                       | To change it                |
-| -------- | --------------------------------------------------------------------------------------------------- | --------------------------- |
-| Records  | from the browser straight to the data service, on the page's host and port 3030                     | set `VITE_DATA_SERVICE_URL` |
-| Commands | to `/command` on the dev server, which passes them on to the live server at `http://localhost:3031` | set `LIVE_SERVER_URL`       |
+| What     | Path         | Where the dev server passes it on to         | To change it           |
+| -------- | ------------ | -------------------------------------------- | ---------------------- |
+| Records  | `/socket.io` | the data service, at `http://localhost:3030` | set `DATA_SERVICE_URL` |
+| Commands | `/command`   | the live server, at `http://localhost:3031`  | set `LIVE_SERVER_URL`  |
 
-Commands go through the dev server because the `CommandServer` sends no CORS headers, and a browser will not post to another origin without them. `bun run build` builds the web app into `dist/`; whatever serves that must pass `/command` on in the same way.
+So the browser needs no second address and no CORS headers. `bun run build` builds the web app into `dist/`; whatever serves that must pass both paths on in the same way, `/socket.io` as a WebSocket.
 
 ### No Build Step
 
