@@ -26,13 +26,14 @@ The demo's protocol is laid out by domain: `users/` and `servers/` each hold a r
 
 What to keep to when writing a manager or a live object, each explained in the [Architecture](architecture.md):
 
-| Guideline                                                                                                                                                          | Where                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| Each phase has its work: `init()` reads own records, `start()` begins to watch, `run()` acts. The order of the managers never matters                              | [Each Phase Has Its Work](architecture.md#each-phase-has-its-work)            |
-| Data is shared through the store first. Every store is a projection of the data service, and a part that needs data another part owns watches the store            | [Sharing Data: the Store First](architecture.md#sharing-data-the-store-first) |
-| The event bus is for "special" communication: live objects among themselves, and a part reporting data for a record it does not own                                | [Event Sources](architecture.md#event-sources)                                |
-| A manager is not written for a single record. A record that belongs to a manager carries that manager's `key`, and the required ones are a table in the protocol   | [A Record per Manager](architecture.md#a-record-per-manager)                  |
-| Routes are only for what a web app sends in. Inside the system nothing sends a command or calls a manager directly: the parts react to the store and the event bus | [Who Sends Commands](architecture.md#who-sends-commands)                      |
+| Guideline                                                                                                                                                             | Where                                                                         |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Each phase has its work: `init()` reads own records, `start()` begins to watch, `run()` acts. The order of the managers never matters                                 | [Each Phase Has Its Work](architecture.md#each-phase-has-its-work)            |
+| Data is shared through the store first. Every store is a projection of the data service, and a part that needs data another part owns watches the store               | [Sharing Data: the Store First](architecture.md#sharing-data-the-store-first) |
+| The event bus is for "special" communication: live objects among themselves, and a part reporting data for a record it does not own                                   | [Event Sources](architecture.md#event-sources)                                |
+| A live object keeps its record's ID, not the record. A change reaches it through the store, never through its manager, and it does not read back the fields it writes | [The Object and Its Record](architecture.md#the-object-and-its-record)        |
+| A manager is not written for a single record. A record that belongs to a manager carries that manager's `key`, and the required ones are a table in the protocol      | [A Record per Manager](architecture.md#a-record-per-manager)                  |
+| Routes are only for what a web app sends in. Inside the system nothing sends a command or calls a manager directly: the parts react to the store and the event bus    | [Who Sends Commands](architecture.md#who-sends-commands)                      |
 
 ## Build and Test
 

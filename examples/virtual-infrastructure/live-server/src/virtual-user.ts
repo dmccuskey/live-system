@@ -7,7 +7,14 @@ import type {
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { debouncePatch, LiveObject } from 'live-system/core'
-import type { CancelTimer, DebouncedPatch, LiveObjectOptions, RecordSource, Unsubscribe } from 'live-system/core'
+import type {
+    CancelTimer,
+    DebouncedPatch,
+    LiveObjectOptions,
+    RecordSource,
+    RecordStore,
+    Unsubscribe,
+} from 'live-system/core'
 import type { DemoContext } from './context.ts'
 import { afterAborted, afterCompleted, afterQueued, afterRefused } from './frustration.ts'
 import { pickCommandType } from './profile.ts'
@@ -20,13 +27,16 @@ const WRITE_DELAY = 100
  * record's rate, unevenly spaced, each of a type drawn from its command mix.
  * It sends each as a `commandRequested` event: it knows nothing of the servers.
  *
+ * It keeps its record's ID, not the record: what it needs of the record it
+ * reads from the store, which has it as it is now.
+ *
  * What becomes of its commands arrives as events too, and moves its
  * frustration: a refusal, a wait in the queue and an abort add to it, a
  * completed command relieves it.
  */
 export class VirtualUser extends LiveObject {
     readonly id: string
-    #record: UserRecord
+    #records: RecordStore<UserRecord>
     #context: DemoContext
     #cancelTimer: CancelTimer | undefined
     #frustration = 0
@@ -37,14 +47,15 @@ export class VirtualUser extends LiveObject {
     #write: DebouncedPatch<UserRecord>
 
     constructor(
-        record: UserRecord,
+        id: string,
+        records: RecordStore<UserRecord>,
         source: RecordSource<UserRecord>,
         context: DemoContext,
         options?: LiveObjectOptions,
     ) {
         super(options)
-        this.id = record.id
-        this.#record = record
+        this.id = id
+        this.#records = records
         this.#context = context
         this.#write = debouncePatch<UserRecord>(data => source.patch(this.id, data), WRITE_DELAY, {
             clock: context.clock,
@@ -62,7 +73,7 @@ export class VirtualUser extends LiveObject {
 
     /** No command outlives the live server, so neither does the frustration: what the record says of an earlier run is cleared. */
     override async init(): Promise<void> {
-        if (this.#record.frustration !== 0) this.#write.patch({ frustration: 0 })
+        if ((this.#record?.frustration ?? 0) !== 0) this.#write.patch({ frustration: 0 })
 
         await this.#write.flush()
     }
@@ -108,9 +119,14 @@ export class VirtualUser extends LiveObject {
         for (const unsubscribe of this.#subscriptions.splice(0)) unsubscribe()
     }
 
+    // The record as the store has it now. There is none once the user has been removed.
+    get #record(): UserRecord | undefined {
+        return this.#records.get(this.id)
+    }
+
     // Waits a random time, the mean of which gives the user's rate, then sends a command and waits again
     #schedule(): void {
-        const rate = this.#record.commandsPerMinute
+        const rate = this.#record?.commandsPerMinute ?? 0
 
         if (this.isDestroyed || !(rate > 0)) return
 
@@ -124,7 +140,11 @@ export class VirtualUser extends LiveObject {
     }
 
     #send(): void {
-        const type = pickCommandType(this.#record.commandMix, this.#context.random())
+        const record = this.#record
+
+        if (!record) return
+
+        const type = pickCommandType(record.commandMix, this.#context.random())
 
         this.#context.events.emit('commandRequested', { commandId: crypto.randomUUID(), userId: this.id, type })
     }

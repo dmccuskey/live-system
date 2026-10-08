@@ -52,7 +52,7 @@ export class UserManager extends LiveObjectManager<UserRecord, VirtualUser, Demo
     }
 
     protected override createObject(record: UserRecord, options: LiveObjectOptions): VirtualUser {
-        return new VirtualUser(record, this.source, this.context, options)
+        return new VirtualUser(record.id, this.records, this.source, this.context, options)
     }
 
     // The first name on the list that no user has, then 'User N'

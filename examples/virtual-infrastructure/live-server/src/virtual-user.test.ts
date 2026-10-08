@@ -8,6 +8,7 @@ import {
 } from '@virtual-infrastructure/protocol/users/users.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { MemoryRecordSource } from 'live-system/core'
+import { useUserStore } from './stores.ts'
 import { advanceUntil, collect, createContext } from './test-support.ts'
 import { VirtualUser } from './virtual-user.ts'
 
@@ -36,12 +37,16 @@ let users: VirtualUser[] = []
 const create = (overrides: Partial<UserRecord> = {}, random = () => 0.5) => {
     const context = createContext({ random })
     const source = new RecordingSource([{ ...record, ...overrides }])
+    const records = useUserStore(context.pinia)
     const sent = collect(context.events, 'commandRequested')
-    const user = new VirtualUser({ ...record, ...overrides }, source, context)
+
+    records.set({ ...record, ...overrides })
+
+    const user = new VirtualUser(record.id, records, source, context)
 
     users.push(user)
 
-    return { user, sent, context, clock: context.clock, source }
+    return { user, sent, context, clock: context.clock, source, records }
 }
 
 // A user that listens but sends nothing of its own: the tests play the servers' part
@@ -123,6 +128,37 @@ describe('generating commands', () => {
 
         user.run()
         await clock.advance(8_000)
+
+        expect(sent).toEqual([])
+    })
+
+    test('it sends at the rate its record has in the store now, not the one it was created with', async () => {
+        const { user, sent, clock, records } = create({ commandsPerMinute: 4 })
+
+        user.run()
+        records.set({ ...record, commandsPerMinute: 60 })
+        await clock.advance(30_000)
+
+        // At 4 a minute it would be 2 or 3. The wait under way is not cut short, those after it are
+        expect(sent.length).toBeGreaterThan(10)
+    })
+
+    test('it draws from the command mix its record has in the store now', async () => {
+        const { user, sent, clock, records } = create({}, () => 0.5)
+
+        user.run()
+        records.set({ ...record, commandMix: { search: 1, standard: 0, agentic: 0 } })
+        await clock.advance(8_000)
+
+        expect(new Set(sent.map(event => event.type))).toEqual(new Set(['search']))
+    })
+
+    test('a user whose record has gone from the store sends nothing', async () => {
+        const { user, sent, clock, records } = create()
+
+        user.run()
+        records.remove(record.id)
+        await clock.advance(30_000)
 
         expect(sent).toEqual([])
     })

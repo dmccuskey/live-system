@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { MemoryRecordSource } from 'live-system/core'
+import { useServerStore } from './stores.ts'
 import { advanceUntil, collect, createContext, finishedEvents } from './test-support.ts'
 import { VirtualServer } from './virtual-server.ts'
 
@@ -23,11 +24,15 @@ let servers: VirtualServer[] = []
 const create = (overrides: Partial<ServerRecord> = {}) => {
     const source = new RecordingSource([{ ...record, ...overrides }])
     const context = createContext()
-    const server = new VirtualServer({ ...record, ...overrides }, source, context)
+    const records = useServerStore(context.pinia)
+
+    records.set({ ...record, ...overrides })
+
+    const server = new VirtualServer(record.id, records, source, context)
 
     servers.push(server)
 
-    return { server, source, context, clock: context.clock, events: finishedEvents(context) }
+    return { server, source, context, clock: context.clock, events: finishedEvents(context), records }
 }
 
 const command = (id: string, type: 'search' | 'standard' | 'agentic' = 'search') => ({ id, userId: 'u1', type })
@@ -77,6 +82,27 @@ describe('taking a command', () => {
 
         expect(server.load).toBe(5)
         expect(server.activeCommands).toBe(2)
+    })
+
+    test('the capacity is what its record has in the store now, not what it was created with', () => {
+        const { server, records } = create({ capacity: 1 })
+
+        expect(server.take(command('c1', 'agentic'))).toBe(false)
+
+        records.set({ ...record, capacity: 10 })
+
+        expect(server.capacity).toBe(10)
+        expect(server.take(command('c1', 'agentic'))).toBe(true)
+        expect(server.free).toBe(10 - COMMAND_TYPES.agentic.cost)
+    })
+
+    test('a server whose record has gone from the store has no capacity and takes nothing', () => {
+        const { server, records } = create()
+
+        records.remove(record.id)
+
+        expect(server.capacity).toBe(0)
+        expect(server.take(command('c1', 'search'))).toBe(false)
     })
 
     test('a command already running is not taken again', () => {
