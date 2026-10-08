@@ -129,6 +129,32 @@ describe('FeathersConnection', () => {
     })
 })
 
+describe('the handshake', () => {
+    /** Resolves with what the next client to connect sent in its handshake. */
+    const nextHandshake = () =>
+        new Promise<Record<string, unknown>>(resolve =>
+            (app as any).io.once('connection', (socket: any) => resolve(socket.handshake.auth)),
+        )
+
+    test('what is given reaches the data service as the connection is made', async () => {
+        const received = nextHandshake()
+        const withHandshake = new FeathersConnection({ url, handshake: { token: 'secret', role: 'writer' } })
+
+        await withHandshake.connect()
+
+        expect(await received).toEqual({ token: 'secret', role: 'writer' })
+        await withHandshake.disconnect()
+    })
+
+    test('nothing is sent unless given', async () => {
+        const received = nextHandshake()
+
+        await connection.connect()
+
+        expect(await received).toEqual({})
+    })
+})
+
 describe('a record source over the connection', () => {
     test('creates, reads, changes and removes records', async () => {
         const source = connection.recordSource<Item>('items')
