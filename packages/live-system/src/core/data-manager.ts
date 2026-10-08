@@ -144,8 +144,10 @@ export abstract class DataManager<T extends HasId, C = unknown> extends BaseMana
                 ids.map(async id => {
                     try {
                         fetched.set(id, await this.source.get(id))
-                    } catch {
-                        // A record that cannot be fetched has been removed
+                    } catch (error) {
+                        // Any other failure says nothing of the record, and fails the sync
+                        if (!this.source.isNotFound(error)) throw error
+
                         fetched.delete(id)
                     }
                 }),

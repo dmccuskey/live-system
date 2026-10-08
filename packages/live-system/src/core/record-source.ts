@@ -21,6 +21,12 @@ export interface RecordSource<T extends HasId> {
     find(): Promise<T[]>
     /** One record. Rejects when it does not exist. */
     get(id: string): Promise<T>
+    /**
+     * Whether what a call rejected with says that the record does not exist.
+     * Any other failure says nothing of the record: the source may not have
+     * been reached.
+     */
+    isNotFound(error: unknown): boolean
 
     create(data: NewRecord<T>): Promise<T>
     update(id: string, data: T): Promise<T>

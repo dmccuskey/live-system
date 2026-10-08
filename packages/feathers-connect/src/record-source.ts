@@ -79,6 +79,11 @@ export class FeathersRecordSource<T extends HasId> {
         return this.#toRecord(await this.#service.get(id))
     }
 
+    /** Whether what a call rejected with is Feathers' `NotFound`: the record does not exist. */
+    isNotFound(error: unknown): boolean {
+        return (error as { code?: unknown } | null | undefined)?.code === 404
+    }
+
     async create(data: NewRecord<T>): Promise<T> {
         return this.#toRecord(await this.#service.create(this.#toBackend(data)))
     }
