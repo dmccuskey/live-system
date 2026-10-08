@@ -4,7 +4,7 @@ import type { CommandType } from '@virtual-infrastructure/protocol/servers/serve
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { debouncePatch, LiveObject } from 'live-system/core'
-import type { CancelTimer, DebouncedPatch, LiveObjectOptions, RecordSource } from 'live-system/core'
+import type { CancelTimer, DebouncedPatch, LiveObjectOptions, RecordSource, RecordStore } from 'live-system/core'
 import type { DemoContext } from './context.ts'
 
 /** A user's command, as a server runs it. */
@@ -27,11 +27,13 @@ const WRITE_DELAY = 100
  * The live object of a server record. Its active commands are in memory only:
  * the record holds their count and the load they add up to. The load never
  * exceeds the capacity: a command that does not fit is not taken.
+ *
+ * It keeps its record's ID, not the record: what it needs of the record it
+ * reads from the store, which has it as it is now.
  */
 export class VirtualServer extends LiveObject {
     readonly id: string
-    readonly capacity: number
-    #record: ServerRecord
+    #records: RecordStore<ServerRecord>
     #context: DemoContext
     #active = new Map<string, ActiveCommand>()
     #load = 0
@@ -39,15 +41,15 @@ export class VirtualServer extends LiveObject {
     #write: DebouncedPatch<ServerRecord>
 
     constructor(
-        record: ServerRecord,
+        id: string,
+        records: RecordStore<ServerRecord>,
         source: RecordSource<ServerRecord>,
         context: DemoContext,
         options?: LiveObjectOptions,
     ) {
         super(options)
-        this.id = record.id
-        this.capacity = record.capacity
-        this.#record = record
+        this.id = id
+        this.#records = records
         this.#context = context
         this.#write = debouncePatch<ServerRecord>(data => source.patch(this.id, data), WRITE_DELAY, {
             clock: context.clock,
@@ -56,6 +58,11 @@ export class VirtualServer extends LiveObject {
                 if (!this.isDestroyed) console.error(`VirtualServer ${this.id}: a write failed`, error)
             },
         })
+    }
+
+    /** What the server can carry at once, in capacity units. Once its record is gone, nothing. */
+    get capacity(): number {
+        return this.#record?.capacity ?? 0
     }
 
     /** The capacity units the active commands take up. */
@@ -89,8 +96,12 @@ export class VirtualServer extends LiveObject {
 
     /** No command outlives the live server, and no draining, so what the record says of an earlier run is cleared. */
     override async init(): Promise<void> {
-        if (this.#record.load !== this.#load || this.#record.activeCommands !== this.#active.size) this.#writeLoad()
-        if (this.#record.isDraining) this.#write.patch({ isDraining: false })
+        const record = this.#record
+
+        if (!record) return
+
+        if (record.load !== this.#load || record.activeCommands !== this.#active.size) this.#writeLoad()
+        if (record.isDraining) this.#write.patch({ isDraining: false })
 
         await this.#write.flush()
     }
@@ -128,6 +139,11 @@ export class VirtualServer extends LiveObject {
             cancelTimer()
             this.#emitFinished(command, 'aborted')
         }
+    }
+
+    // The record as the store has it now. There is none once the server has been removed.
+    get #record(): ServerRecord | undefined {
+        return this.#records.get(this.id)
     }
 
     #finish(commandId: string): void {

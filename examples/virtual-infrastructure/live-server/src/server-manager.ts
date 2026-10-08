@@ -177,7 +177,7 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     }
 
     protected override createObject(record: ServerRecord, options: LiveObjectOptions): VirtualServer {
-        return new VirtualServer(record, this.source, this.context, options)
+        return new VirtualServer(record.id, this.records, this.source, this.context, options)
     }
 
     // A command joins the back of the queue, unless its user has one waiting already
