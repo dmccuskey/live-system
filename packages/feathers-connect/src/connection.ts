@@ -15,11 +15,18 @@ export interface FeathersConnectionOptions {
     url: string
     /** How long `connect()` waits, in milliseconds. */
     connectTimeout?: number
+    /**
+     * How long a call to the data service waits for its answer, in
+     * milliseconds. A call made while the connection is away is held until
+     * the connection is back, for no longer than this.
+     */
+    requestTimeout?: number
 }
 
 type ConnectionListener = () => void
 
 const DEFAULT_CONNECT_TIMEOUT = 5000
+const DEFAULT_REQUEST_TIMEOUT = 10_000
 
 /**
  * A socket connection to a Feathers data service. Services and record sources
@@ -40,7 +47,12 @@ export class FeathersConnection {
         this.#url = options.url
         this.#connectTimeout = options.connectTimeout ?? DEFAULT_CONNECT_TIMEOUT
 
-        this.#socket = io(this.#url, { transports: ['websocket'], autoConnect: false })
+        // With an ackTimeout socket.io rejects a call that is not answered in time, and no longer sends one it held
+        this.#socket = io(this.#url, {
+            transports: ['websocket'],
+            autoConnect: false,
+            ackTimeout: options.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT,
+        })
         this.#socket.on('connect', () => {
             const isReconnect = this.#hasConnected
 
