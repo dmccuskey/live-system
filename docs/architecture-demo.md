@@ -201,7 +201,7 @@ This allows the demo to show that infrastructure health and user experience are 
 
 ## The Data Service
 
-The data service is a Feathers app in a process of its own, with a service per kind of record: `users`, `servers`, `settings` and `status`. The live server and the web app both connect to it over Socket.IO, and it publishes every change to every client.
+The data service is a Feathers app in a process of its own, with a service per kind of record: `users`, `servers` and `managers`. The live server and the web app both connect to it over Socket.IO, and it publishes every change to every client.
 
 It keeps the records in a SQLite file, one table per service, each record stored whole as JSON beside its ID. A record therefore gains a field without a change to the table. A record created without an `id` is given a UUID.
 
@@ -225,16 +225,14 @@ interface ServerRecord {
     isDraining: boolean
 }
 
-interface SettingsRecord {
+// A manager record: the ServerManager's
+interface ServerManagerRecord {
     id: string
-    key: string
+    key: 'servers'
+    // Set by the Demo User
     scalingMode: 'automatic' | 'manual'
     maxUtilization: number
-}
-
-interface StatusRecord {
-    id: string
-    key: string
+    // Reported by the manager
     queueLength: number
     waitingForRoom: number
     utilization: number
@@ -245,17 +243,20 @@ A user's command mix is three fractions that sum to 1, and its frustration runs 
 
 A server has one kind of capacity, counted in whole units, and a command costs a whole number of them. For example, a server of 10 units running one agentic command that costs 4 has a load of 4. Whole numbers are easier to reconcile by eye than fractions of a server.
 
-A settings record belongs to one manager, and its `key` names that manager. There is one so far, with the key `servers`, for the `ServerManager`: the scaling mode and the maximum utilization, a fraction. A manager that gains settings gets a record of its own.
+A manager record belongs to one manager, and its `key` names that manager ([Architecture](architecture.md#a-record-per-manager)). Each manager's record has its own type. There is one so far, with the key `servers`, for the `ServerManager`. It holds two kinds of data:
 
-A status record holds what one manager reports of itself, and its `key` names that manager, the one that provides the data. There is one so far, with the key `servers`, for the `ServerManager`: the number of commands that wait in the queue, how many of them wait for room on a server (the others wait for their own user, who has as many running as a user may), and the system utilization, which is the 10-second average that automatic scaling goes by ([Automatic](#automatic)), a fraction from 0 to 1 in whole percent. A manager that gains a status gets a record of its own.
+- **What the Demo User has set:** the scaling mode and the maximum utilization, a fraction.
+- **What the manager reports of the servers as a whole:** the number of commands that wait in the queue, how many of them wait for room on a server (the others wait for their own user, who has as many running as a user may), and the system utilization, which is the 10-second average that automatic scaling goes by ([Automatic](#automatic)), a fraction from 0 to 1 in whole percent.
 
-Both kinds of record are found by their `key`, never by their `id`: the ID is the data service's to give, as for every other record.
+A manager that gains settings or something to report gets a record of its own, in the same service.
+
+A manager record is found by its `key`, never by its `id`: the ID is the data service's to give, as for every other record.
 
 The service does not validate what it is given: only the live server writes to it.
 
 ## The Live Server
 
-The live server is a process of its own: a `LiveSystem` with a `ServerManager`, a `UserManager`, a `SettingsManager` and a `StatusManager`, connected to the data service and taking commands over HTTP. It is the only writer of records.
+The live server is a process of its own: a `LiveSystem` with a `ServerManager`, a `UserManager` and a `ManagerRecords`, which mirrors the manager records into their store, connected to the data service and taking commands over HTTP. It is the only writer of records.
 
 There are two ways in, and they are kept apart:
 
@@ -272,55 +273,49 @@ UserManager, ServerManager              ServerManager ──▶ a VirtualServer
 
 **Routes are for what the Demo User changes.** There are five, each with a command creator in the protocol:
 
-| Route                  | Does                                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------------- |
-| `users/add`            | creates a user, with the next free name and a random profile                                          |
-| `users/:id/remove`     | removes the user                                                                                      |
-| `servers/add`          | creates a server of 10 capacity units                                                                 |
-| `servers/:id/remove`   | removes the server                                                                                    |
-| `settings/:key/update` | changes the settings of the manager the key names: the scaling mode, the maximum utilization, or both |
+| Route                  | Does                                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `users/add`            | creates a user, with the next free name and a random profile                                                                     |
+| `users/:id/remove`     | removes the user                                                                                                                 |
+| `servers/add`          | creates a server of 10 capacity units                                                                                            |
+| `servers/:id/remove`   | removes the server                                                                                                               |
+| `managers/:key/update` | changes what is set for the manager the key names. `managers/servers/update`: the scaling mode, the maximum utilization, or both |
 
-The two server routes are refused in automatic mode.
+`servers/add` and `servers/:id/remove` are refused in automatic mode.
 
 **What the virtual users generate travels over the event bus.** A user and a server never know each other, and nothing calls a manager directly. The events are defined in the protocol's `events.ts`:
 
-| Event                        | Emitted by                       | Means                                                                                                                                                                 |
-| ---------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commandRequested`           | a `VirtualUser`                  | the user wants a command run. It carries the command's ID, the user's ID and the type                                                                                 |
-| `commandQueued`              | the `ServerManager`              | the command waits in the queue                                                                                                                                        |
-| `commandStarted`             | the `VirtualServer` that took it | the command is running, and on which server                                                                                                                           |
-| `commandRefused`             | the `ServerManager`              | the command will not be run, and why: `queue_full` when its user already has one waiting, `dropped` when it was waiting as its user was removed or the system stopped |
-| `commandFinished`            | the `VirtualServer`              | the command left its server: `completed` after its duration, or `aborted` because the server was removed or the system stopped                                        |
-| `userRemoved`                | the `UserManager`                | a user is gone, so whatever of its waits can be dropped                                                                                                               |
-| `servers.queueChanged`       | the `ServerManager`              | the number of commands that wait has changed, or how many of them wait for room                                                                                       |
-| `servers.utilizationChanged` | the `ServerManager`              | the average utilization of the servers as a whole has changed                                                                                                         |
-
-An event that reports a manager's own status is named after the manager, as the last two are, so that another manager's status can be told apart from it.
+| Event              | Emitted by                       | Means                                                                                                                                                                 |
+| ------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commandRequested` | a `VirtualUser`                  | the user wants a command run. It carries the command's ID, the user's ID and the type                                                                                 |
+| `commandQueued`    | the `ServerManager`              | the command waits in the queue                                                                                                                                        |
+| `commandStarted`   | the `VirtualServer` that took it | the command is running, and on which server                                                                                                                           |
+| `commandRefused`   | the `ServerManager`              | the command will not be run, and why: `queue_full` when its user already has one waiting, `dropped` when it was waiting as its user was removed or the system stopped |
+| `commandFinished`  | the `VirtualServer`              | the command left its server: `completed` after its duration, or `aborted` because the server was removed or the system stopped                                        |
+| `userRemoved`      | the `UserManager`                | a user is gone, so whatever of its waits can be dropped                                                                                                               |
 
 **Time comes from the context's clock.** LiveSystem does not ask for this: the demo does it so that its tests can move the time by hand instead of waiting for it. Every delay of the simulation (a user's pause between commands, a command's duration, the sampling of the load, the delay before a record is written) is set on the `clock` in the context, a `Clock` of `live-system/core` ([Architecture](architecture.md#time)), and the waits and run times are read from it. By default it is real time. `createLiveServer` takes a `timeScale`, which multiplies every delay (0.1 runs the simulation ten times as fast), and a `clock` of its own, which is how a test gives its `FakeClock`.
 
-### Settings and Status
+### Manager Records
 
-Each kind of record has one manager, and only that manager writes it. The `SettingsManager` owns the settings records and the `StatusManager` the status records. Neither is written for a single record: each holds one record per manager, found by its key ([Architecture](architecture.md#a-record-per-manager)).
+Each kind of record has one owner, and only its owner writes it. The `ServerManager` owns its manager record, the one with the key `servers`, as it owns the servers ([Architecture](architecture.md#a-record-per-manager)). It has a source of its own for the `managers` service to write through, beside the one for `servers`.
 
-**Settings travel through the store, not over the event bus.** Every store is a projection of the data service ([Architecture](architecture.md#sharing-data-the-store-first)), and the settings store is no exception. The `settings/:key/update` route has the `SettingsManager` patch the record in the data service. The change comes back as an event of the service, and the `SettingsManager` writes it into the settings store. The `ServerManager` watches that store for the record with its key, `servers`, and takes its settings from there. The `SettingsManager` sees to it that the record is there before anything starts. Should it be missing all the same, for example deleted by hand in the data service during development, the `ServerManager` uses the defaults.
+**What the Demo User sets travels through the store.** The managers' route, `managers/:key/update`, is taken by each manager with its own key: `managers/servers/update` has the `ServerManager` patch its record in the data service. The change comes back as an event of the service and lands in the manager store, and the `ServerManager`, which watches that store for its record, takes its settings from there. It does not act on the change when it writes it: every store is a projection of the data service ([Architecture](architecture.md#sharing-data-the-store-first)), and the manager store is no exception.
 
 ```text
-UI ──▶ settings/servers/update ──▶ SettingsManager ──▶ data service
-                                                           │ change event
-                                                           ▼
-                        ServerManager ◀── watches ── settings store
+UI ──▶ managers/servers/update ──▶ ServerManager ──▶ data service
+                                         ▲                 │ change event
+                                         │                 ▼
+                                         └── watches ── manager store
 ```
 
-The stores are reached through the context, which holds the Pinia instance beside the event bus.
+**What the manager reports it writes itself.** The `ServerManager` produces the queue's length and the utilization, and writes them to its record as they change, changes close together as one write. The utilization is written after each sample, when it has changed. It leaves a draining server out, because its capacity is on its way out. The manager does not read these fields back from the store.
 
-**Which records there must be is in the protocol.** `DEFAULT_SETTINGS` has the defaults of every settings key, and `INITIAL_STATUS` the status every key begins a run with. In its `init()`, once its records are loaded, each of the two managers goes through its table and creates the record of every key that has none. A new key without an entry in its table is a type error, so a record cannot be forgotten. A created record reaches the store with the data service's event, which may come after the answer to the create, so the `SettingsManager` waits in `init()` until the store has it. The same defaults are what a manager falls back on when its record is missing.
+**The store is mirrored by a manager of its own.** The manager records share one store, and a store has one manager that keeps it a projection of the data service. That is `ManagerRecords`, an empty `DataManager`: it writes no record.
 
-**Status goes the other way.** The `ServerManager` produces the queue's length and the utilization, yet it does not write the status record. It announces the queue's length as `servers.queueChanged` events and the utilization as `servers.utilizationChanged` events, which the `StatusManager` writes to the status record with the key `servers`, changes close together as one write.
+**The manager sees to its own record in `init()`.** The protocol's `DEFAULT_MANAGER_RECORDS` has what every key begins with. The `ServerManager` asks its source for the record with its key, and creates it from the defaults when there is none. What a record reports is of the run it is reported in, so what it says of an earlier run is replaced, and the settings stay. A new key without an entry in the table is a type error. The same defaults are what the manager falls back on while its record is not in the store, or should it go missing there, for example deleted by hand in the data service during development.
 
-The utilization is announced after each sample, when it has changed. It leaves a draining server out, because its capacity is on its way out.
-
-The order the managers are added in does not matter, because each phase has its work ([Architecture](architecture.md#each-phase-has-its-work)). A manager loads its records into its store in `init()`, begins to listen and to watch in `start()`, and acts in `run()`. The `ServerManager` begins to watch the settings store in its `start()`, when every store is loaded, and the virtual users send their first commands in their `run()`.
+The order the managers are added in does not matter, because each phase has its work ([Architecture](architecture.md#each-phase-has-its-work)). A manager loads its records into its store and sees to its own record in `init()`, begins to listen and to watch in `start()`, and acts in `run()`. The `ServerManager` begins to watch the manager store in its `start()`, when every store is loaded, and the virtual users send their first commands in their `run()`.
 
 ### How a Command Runs
 
@@ -359,7 +354,7 @@ The command types, with placeholder values to be tuned once the demo runs:
 
 ### A First Start
 
-With no server record at start, the `ServerManager` creates one, and with no user record the `UserManager` creates one. The `SettingsManager` creates the settings of every key from the protocol's defaults (for `servers`: automatic mode with a maximum utilization of 75%), and the `StatusManager` the status of every key. The system therefore works without any input.
+With no server record at start, the `ServerManager` creates one, and with no user record the `UserManager` creates one. With no manager record of its own, the `ServerManager` creates it from the protocol's defaults: automatic mode with a maximum utilization of 75%, and nothing waiting. The system therefore works without any input.
 
 ## Demo User Interface
 
@@ -415,22 +410,22 @@ The web app is in Vue 3, and built like the live server: a `LiveSystem`, a conne
 
 ```text
 Data service ──▶ UserManager, ServerManager,     ──▶ stores ──▶ components
-                 SettingsManager, StatusManager                      │
+                 ManagerRecords                                      │
                                                                      │ commands
 Live server ◀── dev server (/command) ◀── CommandClient ◀────────────┘
 ```
 
-A component reads the stores and sends commands, and nothing else. It changes nothing on the page by itself: a new user appears when its record arrives, and the mode shown is the settings record's. The one exception is the slider, which shows its own value from the first movement until the record has the change. It sends its command when released, not on every movement.
+A component reads the stores and sends commands, and nothing else. It changes nothing on the page by itself: a new user appears when its record arrives, and the mode shown is the manager record's. The one exception is the slider, which shows its own value from the first movement until the record has the change. It sends its command when released, not on every movement.
 
 The page is mounted at once and renders from three things ([Starting a Web App](architecture.md#starting-a-web-app)):
 
-| What              | Shown as                                                                                                                                                                                                                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| System status     | a loading line while starting, the reason when the startup failed, the panels when running                                                                                                                                                             |
-| Connection status | a warning above the panels while the data service is not connected                                                                                                                                                                                     |
-| Records           | the panels: a card per user and per server, the mode and the maximum utilization from the settings record, the utilization and the command queue from the status record, as the commands that wait for their own user and those that wait for capacity |
+| What              | Shown as                                                                                                                                                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System status     | a loading line while starting, the reason when the startup failed, the panels when running                                                                                                                                                      |
+| Connection status | a warning above the panels while the data service is not connected                                                                                                                                                                              |
+| Records           | the panels: a card per user and per server, the mode, the maximum utilization, the utilization and the command queue from the `ServerManager`'s record, the queue as the commands that wait for their own user and those that wait for capacity |
 
-The utilization jumps with every command that starts or ends, so the status record holds its average over 10 seconds, which the live server keeps and automatic scaling goes by ([Automatic](#automatic)). The page shows it as it is: every browser sees the same value. In automatic mode it is shown in red while it is above the maximum utilization.
+The utilization jumps with every command that starts or ends, so the record holds its average over 10 seconds, which the live server keeps and automatic scaling goes by ([Automatic](#automatic)). The page shows it as it is: every browser sees the same value. In automatic mode it is shown in red while it is above the maximum utilization.
 
 A user's frustration bar is green below 25%, yellow below 50%, orange below 75% and red from there on.
 

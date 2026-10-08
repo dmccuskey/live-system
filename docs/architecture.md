@@ -395,7 +395,7 @@ Every manager has finished a phase before any begins the next. So a manager that
 
 The order the managers are added in should therefore never matter. A comment that explains why one manager is added before another is a sign that something is done in the wrong phase.
 
-For example, in the [demo](architecture-demo.md#settings-and-status) the `ServerManager` begins to watch the settings store in `start()` and begins to sample the load in `run()`, and the virtual users send their first commands in `run()`.
+For example, in the [demo](architecture-demo.md#manager-records) the `ServerManager` sees to its own record in `init()`, begins to watch the manager store in `start()` and begins to sample the load in `run()`, and the virtual users send their first commands in `run()`.
 
 ### The Context
 
@@ -478,25 +478,42 @@ Managers should not assume that the application uses Feathers, SQLite, HTTP, or 
 
 ### A Record per Manager
 
-Some records describe a manager, not a thing the application has many of: its settings, or the status it reports. A manager of such records follows these rules:
+Some data describes a manager, not a thing the application has many of: what a user has set for it, and what it reports of itself. That data is the manager's own record, a **manager record**, and it follows these rules:
 
-- **It is not written for a single record**, even while there is only one. It holds a record per manager, so the pattern is easy to see and to extend.
-- **Each record carries the key of the manager it belongs to**, in a `key` property. For settings, that is the manager that follows them. For a status, it is the manager that provides the data. The record is found by its `key`.
+- **The manager records share one service and one store.** There is a record per manager that has one, even while only one manager does, so the pattern is easy to see and to extend.
+- **Each record carries the key of the manager it belongs to**, in a `key` property, and is found by it.
+- **Each manager's record has its own type.** The records of one service are not alike: the type is told by the `key`.
 - **The `id` is the data service's to give**, as for every other record. A meaningful name is a property of its own, never the ID.
-- **The required records are a table in the protocol**, by key, each with its defaults.
-- **The manager ensures the required records in `init()`**, once its records are loaded: it creates the record of every key that has none. No other manager then waits for its record to appear.
-- **A manager that reads such a record still has defaults for a missing one.** Someone may delete it by hand during development. The defaults are the same table's.
+- **A manager is the only writer of its own record.** What a user sets arrives as a command on the managers' route, `managers/:key/update`, which each manager takes with its own key, and the manager writes it. The command carries only the settings that change: one left out stays as it is. What the manager reports, it writes as it changes. This is the same split as in any record a live object writes: fields set from outside, and fields the owner produces.
+- **What is set takes effect when it comes back in the store.** The manager watches the store for its record, as for any change. What it reports itself it does not read back.
+- **The manager creates its record in `init()`** when there is none, from its defaults in the protocol. For this it asks its source, not the store.
+- **The defaults are a table in the protocol**, by key. A manager whose record goes missing from the store falls back on them: someone may delete it by hand during development.
+- **One manager mirrors the service into the store** and writes no record, since a store has one manager that keeps it a projection of the data service.
 
 ```ts
-// protocol/settings/settings.constants.ts
-const DEFAULT_SETTINGS: Record<SettingsKey, Omit<SettingsRecord, 'id'>> = {
-    servers: { key: 'servers', scalingMode: 'automatic', maxUtilization: 0.75 },
+// protocol/managers/managers.record.ts
+interface ManagerRecords {
+    servers: ServerManagerRecord
+}
+
+type ManagerRecord = ManagerRecords[keyof ManagerRecords]
+
+// protocol/managers/managers.constants.ts
+const DEFAULT_MANAGER_RECORDS: { [K in keyof ManagerRecords]: Omit<ManagerRecords[K], 'id'> } = {
+    servers: {
+        key: 'servers',
+        scalingMode: 'automatic',
+        maxUtilization: 0.75,
+        queueLength: 0,
+        waitingForRoom: 0,
+        utilization: 0,
+    },
 }
 ```
 
 The table is typed by its keys, so a new key without defaults is a type error and a record cannot be forgotten.
 
-The demo's `SettingsManager` and `StatusManager` are written this way ([Demo Architecture](architecture-demo.md#settings-and-status)).
+The demo's `ServerManager` has such a record ([Demo Architecture](architecture-demo.md#manager-records)).
 
 Decision: [ADR 005](decisions/005-manager-capabilities.md).
 
@@ -895,13 +912,13 @@ The store is how an application shares its data. It is there so that every part 
 - **A watch on the store may be synchronous** (`flush: 'sync'`), so that a change is in force as soon as the store has it.
 
 ```ts
-// in the ServerManager, which follows settings that the SettingsManager owns
+// in the ServerManager: a setting takes effect when it comes back in the store
 async start() {
-    const settings = useSettingsStore(this.context.pinia)
+    const managers = useManagerStore(this.context.pinia)
 
     this.stopWatching = watch(
-        () => Object.values(settings.records).find(record => record.key === 'servers'),
-        record => this.settingsChanged(record ?? DEFAULT_SETTINGS.servers),
+        () => Object.values(managers.records).find(record => record.key === 'servers'),
+        record => this.settingsChanged(record ?? DEFAULT_MANAGER_RECORDS.servers),
         { immediate: true, flush: 'sync' },
     )
 }
@@ -1072,9 +1089,9 @@ events.on('server.overloaded', event => {
 The event bus is a tool LiveSystem provides, not a requirement. Data is shared through the store first ([Sharing Data: the Store First](#sharing-data-the-store-first)), and the event bus is for "special" communication between parts that should not know each other. There are two cases so far:
 
 - **Live objects communicating among themselves, as live objects.** In the demo, the virtual users' commands and the servers' answers.
-- **A part reporting data for a record it does not own, to the manager that owns it.** In the demo, the `ServerManager` announces `servers.queueChanged`, and the `StatusManager` writes the status record. The part that has the data does not write another manager's record itself.
+- **A part reporting data for a record it does not own, to the manager that owns it.** The part that has the data does not write another manager's record itself: it announces the data as an event, and the owner writes it. The demo has no case of this at present, since each of its parts writes only records it owns.
 
-An event that reports a manager's own status is named after the manager (`servers.queueChanged`), so that another manager's status can be told apart from it.
+Such an event is named after the part that reports (`orders.backlogChanged`), so that another part's report can be told apart from it.
 
 An application whose record changes and reactive state already say everything needs no event bus.
 
