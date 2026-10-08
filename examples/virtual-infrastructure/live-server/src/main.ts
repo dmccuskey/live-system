@@ -5,7 +5,10 @@ import { createLiveServer } from './app.ts'
 const dataServiceUrl = process.env.DATA_SERVICE_URL ?? `http://localhost:${DATA_SERVICE_PORT}`
 const port = Number(process.env.LIVE_SERVER_PORT ?? LIVE_SERVER_PORT)
 
-const liveServer = createLiveServer({ dataServiceUrl, port })
+// The same value the data service was given, when it asks for one
+const writeToken = process.env.DATA_SERVICE_WRITE_TOKEN || undefined
+
+const liveServer = createLiveServer({ dataServiceUrl, port, writeToken })
 
 console.log(`Live server taking commands on port ${await liveServer.start()}, records from ${dataServiceUrl}`)
 

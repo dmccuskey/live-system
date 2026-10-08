@@ -52,7 +52,7 @@ const startLiveServer = async (dataServiceUrl: string) => {
         return (await response.json()) as CommandResponse<R>
     }
 
-    return { liveServer, send, clock }
+    return { liveServer, send, clock, url: `http://localhost:${port}` }
 }
 
 const connect = async (url: string) => {
@@ -448,6 +448,83 @@ describe('a data service that is restarted', () => {
 
             rmSync(directory, { recursive: true, force: true })
         }
+    }, 15_000)
+})
+
+describe('a data service with a write token', () => {
+    const start = async (writeToken: string | undefined) => {
+        const dataService = createDataService({ port: 0, filename: ':memory:', writeToken: 'secret' })
+
+        dataServices.push(dataService)
+
+        const url = `http://localhost:${await dataService.start()}`
+        const liveServer = createLiveServer({ dataServiceUrl: url, port: 0, clock: new FakeClock(), writeToken })
+
+        liveServers.push(liveServer)
+
+        return { url, liveServer }
+    }
+
+    test('the live server writes with the token, and a client without it only reads', async () => {
+        const { url, liveServer } = await start('secret')
+
+        await liveServer.start()
+
+        const { users, servers } = await connect(url)
+
+        expect(await servers.find()).toHaveLength(1)
+        expect(await users.find()).toHaveLength(1)
+
+        const outcome = await servers.remove((await servers.find())[0]!.id).then(
+            () => 'written',
+            error => error,
+        )
+
+        expect(outcome).toMatchObject({ name: 'Forbidden' })
+    })
+
+    test('without the token the start fails', async () => {
+        const { liveServer } = await start(undefined)
+        const outcome = await liveServer.start().then(
+            () => 'started',
+            error => error,
+        )
+
+        expect(outcome).toMatchObject({ name: 'Forbidden' })
+    })
+})
+
+describe('the health address', () => {
+    test('is 200 while the data service is connected, and 503 while it is away', async () => {
+        const dataService = createDataService({ port: 0, filename: ':memory:' })
+
+        dataServices.push(dataService)
+
+        const port = await dataService.start()
+        const { url } = await startLiveServer(`http://localhost:${port}`)
+        const health = () => fetch(`${url}/health`)
+        const until = async (status: number) => {
+            for (let tries = 0; tries < 200; tries++) {
+                if ((await health()).status === status) return
+                await Bun.sleep(25)
+            }
+            throw new Error(`The health address never answered ${status}`)
+        }
+
+        const response = await health()
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ status: 'ok' })
+
+        await dataService.stop()
+        await until(503)
+        expect(await (await health()).json()).toEqual({ status: 'unavailable' })
+
+        const again = createDataService({ port, filename: ':memory:' })
+
+        dataServices.push(again)
+        await again.start()
+        await until(200)
     }, 15_000)
 })
 
