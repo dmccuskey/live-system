@@ -1,10 +1,10 @@
 # LiveSystem Documentation
 
-New to LiveSystem? Start with the [README](../README.md). LiveSystem is at the design stage: the workspace is scaffolded and only the state machine, the lifecycle runner and the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes are implemented, so these pages mostly describe what will be built.
+New to LiveSystem? Start with the [README](../README.md). The primitives these pages describe are implemented, and the demo runs on them ([Current Baseline](development.md#current-baseline)). Nothing is a published API yet.
 
 ## Internals
 
-- [Architecture](architecture.md): the primitives, the lifecycle, managers, live objects, record sources, commands and events, and the planned package structure
+- [Architecture](architecture.md): the primitives, the lifecycle, managers, live objects, record sources, commands and events, and the package structure
 - [Demo Architecture](architecture-demo.md): the Virtual Infrastructure Simulator, the demo application that proves the design
 - [Architecture Decisions](decisions/): the decision records (ADRs): why the design is what it is, and what was rejected
 - [Micro FSM](../packages/micro-fsm/README.md): the state machine behind the lifecycle, a package of its own: what it does and its reference

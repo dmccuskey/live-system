@@ -10,14 +10,14 @@ A command asks the running system to do something. It is a route plus data, and 
 
 ```ts
 router.handle({
-    route: 'server/42/restart',
-    data: { force: false },
+    route: 'managers/servers/update',
+    data: { scalingMode: 'manual' },
 })
 ```
 
 ## Status
 
-LiveSystem is at the design stage. The workspace is scaffolded, with its packages in place and the first parts implemented: the state machine, [Micro FSM](packages/micro-fsm/README.md), the lifecycle runner over it, the `LiveSystem`, `BaseManager`, `LiveObject` and `EventBus` classes, commands (the `Router` and the `CommandServer`), and data: `RecordSource`, the record store, `DataManager` and `LiveObjectManager`, the Feathers connection, [Feathers Connect](packages/feathers-connect/README.md), and the web side: the `CommandClient` and `WebStartup` ([Development](docs/development.md)). The demo runs ([Running the Demo](docs/development.md#running-the-demo)). Nothing is a published API yet. The design is in [docs/architecture.md](docs/architecture.md).
+The primitives are implemented: the lifecycle over its state machine, [Micro FSM](packages/micro-fsm/README.md), managers and live objects, commands (the `Router`, the `CommandServer` and the `CommandClient`), the event bus, and data: record sources, the record store and the Feathers connection, [Feathers Connect](packages/feathers-connect/README.md). What is in place is listed under [Current Baseline](docs/development.md#current-baseline). The demo runs on all of it ([Running the Demo](docs/development.md#running-the-demo)). Nothing is a published API yet. The design is in [docs/architecture.md](docs/architecture.md).
 
 ## Primitives
 
@@ -40,7 +40,7 @@ The repository includes a self-contained demo, a Virtual Infrastructure Simulato
 
 ## Documentation
 
-- [Architecture](docs/architecture.md): the design and the planned package structure.
+- [Architecture](docs/architecture.md): the design and the package structure.
 - [Demo Architecture](docs/architecture-demo.md): the design of the demo application.
 
 Everything else is listed on the [documentation home](docs/README.md).

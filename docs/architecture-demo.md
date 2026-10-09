@@ -17,6 +17,8 @@ Virtual Infrastructure
 └── Servers
 ```
 
+Its protocol has a third, `managers/`, for what belongs to a manager itself and not to a user or a server ([Manager Records](#manager-records)).
+
 ## Users
 
 Virtual users continuously generate commands.
@@ -24,20 +26,14 @@ Virtual users continuously generate commands.
 Each user has a fixed behavioral profile:
 
 ```ts
-interface VirtualUserProfile {
-    commandsPerMinute: number
-
-    commandMix: {
-        search: number
-        standard: number
-        agentic: number
-    }
-}
+type UserProfile = Pick<UserRecord, 'commandsPerMinute' | 'commandMix'>
 ```
+
+Both are fields of the user's record ([The Data Service](#the-data-service)): how many commands the user sends in a minute, and the share of each command type in them.
 
 The profile is generated when the user is created.
 
-The Demo User can add or remove users but does not directly manipulate their generated behavioral characteristics in the initial version.
+The Demo User can add or remove users but does not directly manipulate their generated behavioral characteristics.
 
 This intentional variability creates an unpredictable workload.
 
@@ -125,7 +121,7 @@ If sustained utilization exceeds the threshold, the manager adds capacity.
 
 If utilization remains sufficiently below the threshold, the manager may remove excess capacity.
 
-Scale-up and scale-down thresholds should use hysteresis so that the system does not rapidly oscillate between adding and removing servers.
+Scale-up and scale-down thresholds use hysteresis so that the system does not rapidly oscillate between adding and removing servers.
 
 The exact values are configuration rather than architectural requirements.
 
@@ -364,7 +360,7 @@ With no server record at start, the `ServerManager` creates one, and with no use
 
 The Demo User interacts primarily with the environment.
 
-Initial controls should include:
+The controls:
 
 ```text
 Users
@@ -402,11 +398,11 @@ Agentic:        10%
 Frustration:    14%
 ```
 
-The command mix is visible but not editable in the initial version.
+The command mix is visible but not editable.
 
 Later versions may allow the activity rate to be adjusted with a slider.
 
-The command mix should remain fixed initially so that changing infrastructure produces interesting behavior without giving the Demo User direct control over every variable.
+The command mix stays fixed so that changing infrastructure produces interesting behavior without giving the Demo User direct control over every variable.
 
 ### The Web App
 
