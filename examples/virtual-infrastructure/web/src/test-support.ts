@@ -10,6 +10,8 @@ import { createPinia } from 'pinia'
 import { ref, shallowReactive } from 'vue'
 import { WEB_APP } from './app.ts'
 import type { WebApp } from './app.ts'
+import { emptyWebConfig } from './config.ts'
+import type { WebConfig } from './config.ts'
 import { createCommandSender } from './command-sender.ts'
 
 /**
@@ -20,6 +22,7 @@ export function createTestApp(respond: (command: Command) => CommandResponse = (
     const sent: Command[] = []
     const status = shallowReactive<{ phase: SystemPhase; error: unknown }>({ phase: 'running', error: undefined })
     const isConnected = ref(true)
+    const config = ref<WebConfig>(emptyWebConfig())
     const pinia = createPinia()
 
     const client = new CommandClient({
@@ -38,6 +41,7 @@ export function createTestApp(respond: (command: Command) => CommandResponse = (
         status,
         isConnected,
         commands: createCommandSender(client),
+        config,
         start: async () => {},
         stop: async () => {},
     }
@@ -47,6 +51,7 @@ export function createTestApp(respond: (command: Command) => CommandResponse = (
         pinia,
         status,
         isConnected,
+        config,
         /** Every command sent, in order. */
         sent,
         /** The `global` option of `mount()`. */

@@ -1,0 +1,10 @@
+# The images are built from the repository's root, so this covers all of them
+.git
+**/node_modules
+**/dist
+**/data
+**/*.sqlite
+**/*.test.ts
+**/.env
+**/.DS_Store
+docs

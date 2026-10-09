@@ -3,11 +3,13 @@ import { createApp } from 'vue'
 import { createWebApp, WEB_APP } from './app.ts'
 import App from './components/App.vue'
 
-// Both on the page's own origin: whatever serves the page (the dev server, or the server in front
-// of a build) passes `/socket.io` on to the data service and `/command` on to the live server
+// All on the page's own origin: whatever serves the page (the dev server, or the server in front
+// of a build) passes `/socket.io` on to the data service and `/command` on to the live server,
+// and answers `/config.json` itself
 const webApp = createWebApp({
     dataServiceUrl: location.origin,
     commandUrl: '/command',
+    configUrl: '/config.json',
 })
 
 const app = createApp(App)

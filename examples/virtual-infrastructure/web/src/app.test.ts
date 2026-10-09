@@ -107,6 +107,48 @@ describe('the web app', () => {
         expect(webApp.isConnected.value).toBe(false)
     })
 
+    test('start() reads the configuration, whatever becomes of the startup', async () => {
+        const urls: string[] = []
+        const webApp = createWebApp({
+            dataServiceUrl: 'http://localhost:1',
+            commandUrl: 'http://localhost:1/command',
+            configUrl: '/config.json',
+            fetch: async url => {
+                urls.push(url)
+
+                return Response.json({ links: [{ label: 'Source code', url: 'https://git.example.com/demo' }] })
+            },
+        })
+
+        webApps.push(webApp)
+        expect(webApp.config.value).toEqual({ links: [] })
+
+        await webApp.start()
+
+        expect(webApp.status.phase).toBe('failed')
+        expect(urls).toEqual(['/config.json'])
+        expect(webApp.config.value).toEqual({ links: [{ label: 'Source code', url: 'https://git.example.com/demo' }] })
+    })
+
+    test('start() reads no configuration unless told where it is', async () => {
+        const urls: string[] = []
+        const webApp = createWebApp({
+            dataServiceUrl: 'http://localhost:1',
+            commandUrl: 'http://localhost:1/command',
+            fetch: async url => {
+                urls.push(url)
+
+                return Response.json({ links: [{ label: 'Source code', url: 'https://git.example.com/demo' }] })
+            },
+        })
+
+        webApps.push(webApp)
+        await webApp.start()
+
+        expect(urls).toEqual([])
+        expect(webApp.config.value).toEqual({ links: [] })
+    })
+
     test('a command changes the store, by way of the live server and the data service', async () => {
         const { webApp } = await setUp()
         const users = useUsers(webApp.pinia)

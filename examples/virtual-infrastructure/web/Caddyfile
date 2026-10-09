@@ -1,0 +1,48 @@
+# The demo's door: serves the built web app, passes its three paths on and answers its run-time
+# configuration, as the dev server does (vite.config.ts). The addresses default to the containers' names on their network.
+{
+	admin off
+}
+
+:{$WEB_PORT:3032} {
+	# Records: Socket.IO, as a WebSocket
+	handle /socket.io/* {
+		reverse_proxy {$DATA_SERVICE_URL:http://data-service:3030}
+	}
+
+	# Commands
+	handle /command {
+		reverse_proxy {$LIVE_SERVER_URL:http://live-server:3031}
+	}
+
+	# The live server's answer stands for the whole demo: it is 200 only while the live server is
+	# connected to the data service. A page on another origin may read it when that origin is given
+	handle /health {
+		@allowed expression `"{$HEALTH_ALLOW_ORIGIN}" != ""`
+		header @allowed Access-Control-Allow-Origin "{$HEALTH_ALLOW_ORIGIN}"
+		reverse_proxy {$LIVE_SERVER_URL:http://live-server:3031}
+	}
+
+	# What the web app is told at run time: the links of its "About" dialog, each from a pair of
+	# variables. The web app leaves out a link that lacks either, so a pair that is unset gives none
+	handle /config.json {
+		header Content-Type application/json
+		header Cache-Control no-cache
+		respond `{"links":[
+			{"label":"{$ABOUT_LINK_1_LABEL}","url":"{$ABOUT_LINK_1_URL}"},
+			{"label":"{$ABOUT_LINK_2_LABEL}","url":"{$ABOUT_LINK_2_URL}"},
+			{"label":"{$ABOUT_LINK_3_LABEL}","url":"{$ABOUT_LINK_3_URL}"},
+			{"label":"{$ABOUT_LINK_4_LABEL}","url":"{$ABOUT_LINK_4_URL}"}
+		]}`
+	}
+
+	handle {
+		root * /srv
+
+		# The assets' names change with their content, the page's does not
+		@page path / /index.html
+		header @page Cache-Control no-cache
+
+		file_server
+	}
+}

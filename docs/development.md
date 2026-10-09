@@ -95,14 +95,81 @@ bun run dev
 
 Open `http://localhost:3032`. The page shows the users and the servers of the running system, and its controls send commands. To change the port, set `WEB_PORT`.
 
-The web app is served by [Vite](https://vite.dev)'s dev server, and talks to its own origin only. The dev server passes two paths on:
+The web app is served by [Vite](https://vite.dev)'s dev server, and talks to its own origin only. The dev server passes two paths on, and answers a third:
 
-| What     | Path         | Where the dev server passes it on to         | To change it           |
-| -------- | ------------ | -------------------------------------------- | ---------------------- |
-| Records  | `/socket.io` | the data service, at `http://localhost:3030` | set `DATA_SERVICE_URL` |
-| Commands | `/command`   | the live server, at `http://localhost:3031`  | set `LIVE_SERVER_URL`  |
+| What          | Path           | Where it goes                                             | To change it                                             |
+| ------------- | -------------- | --------------------------------------------------------- | -------------------------------------------------------- |
+| Records       | `/socket.io`   | passed on to the data service, at `http://localhost:3030` | set `DATA_SERVICE_URL`                                   |
+| Commands      | `/command`     | passed on to the live server, at `http://localhost:3031`  | set `LIVE_SERVER_URL`                                    |
+| Configuration | `/config.json` | answered by the dev server                                | set `ABOUT_LINK_1_LABEL` and `ABOUT_LINK_1_URL`, up to 4 |
 
-So the browser needs no second address and no CORS headers. `bun run build` builds the web app into `dist/`; whatever serves that must pass both paths on in the same way, `/socket.io` as a WebSocket.
+So the browser needs no second address and no CORS headers. `bun run build` builds the web app into `dist/`; whatever serves that must do the same with all three paths, `/socket.io` as a WebSocket. The demo's [web image](#running-the-demo-in-containers) does.
+
+The configuration is what the web app is told at run time: the links of its "About" dialog. The web app knows nothing of what they lead to. Each link is a pair of variables, what it says and where it leads, and there may be up to four, shown in their order:
+
+```sh
+ABOUT_LINK_1_LABEL="Source code" ABOUT_LINK_1_URL=https://git.example.com/demo bun run dev
+```
+
+A pair that is not set, or only half set, gives no link, so by default the dialog has none. An address must begin with `http://` or `https://`. A label cannot contain a double quote in the containers, where it would spoil the file and leave the dialog without links.
+
+### Running the Demo in Containers
+
+The demo also runs as three containers, with [Docker](https://www.docker.com) and no Bun installed. In `examples/virtual-infrastructure/`:
+
+```sh
+docker compose up --build
+```
+
+Open `http://localhost:3032`. Stop it with Ctrl+C.
+
+| Container      | Runs                                           | Reached from outside           |
+| -------------- | ---------------------------------------------- | ------------------------------ |
+| `data-service` | the data service, on port 3030                 | no                             |
+| `live-server`  | the live server, on port 3031                  | no                             |
+| `web`          | [Caddy](https://caddyserver.com), on port 3032 | yes: it is the demo's one door |
+
+The `web` container serves the built web app and does what the dev server does: it passes `/socket.io` on to the data service and `/command` on to the live server, and answers `/config.json`. It also passes `/health` on to the live server, so one address tells whether the whole demo works:
+
+```sh
+curl http://localhost:3032/health
+```
+
+The records are kept in memory (a `tmpfs`), so the demo starts from nothing each time its containers are created. To start over while it runs:
+
+```sh
+docker compose up -d --force-recreate
+```
+
+A page that is open meanwhile says that the connection is lost, then shows the new system.
+
+Set these where `docker compose` runs, in the environment or in an `.env` file beside `compose.yaml` (Git ignores it):
+
+| Variable                                          | What it does                                                                                               | When not set           |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `WEB_PORT`                                        | the port the demo is opened on                                                                             | 3032                   |
+| `DATA_SERVICE_WRITE_TOKEN`                        | makes the records read-only from outside: any value, given to the data service and the live server alike   | every client may write |
+| `HEALTH_ALLOW_ORIGIN`                             | the origin of a page elsewhere that may read `/health` from a browser, such as `https://demos.example.com` | no such page           |
+| `ABOUT_LINK_1_LABEL`, `ABOUT_LINK_1_URL`, up to 4 | a link in the "About" dialog: what it says and where it leads ([above](#running-the-demo))                 | no link                |
+
+Each image is built from the repository's root by the `Dockerfile` in its part's folder, which is what `compose.yaml` does:
+
+```sh
+docker build -f examples/virtual-infrastructure/web/Dockerfile -t virtual-infrastructure-web .
+```
+
+### Publishing the Demo's Images
+
+A tag named `virtual-infrastructure-v<version>` publishes the three images to the GitHub Container Registry, built for AMD64 and ARM64:
+
+```sh
+git tag virtual-infrastructure-v0.1.0
+git push origin virtual-infrastructure-v0.1.0
+```
+
+The workflow in `.github/workflows/demo-images.yml` pushes `ghcr.io/<owner>/virtual-infrastructure-<part>` under the version (`0.1.0`) and under `latest`, where `<owner>` is the account the repository belongs to and `<part>` is `data-service`, `live-server` or `web`.
+
+A package is private when it is first pushed: make it public in its settings on GitHub before others can pull it.
 
 ### No Build Step
 

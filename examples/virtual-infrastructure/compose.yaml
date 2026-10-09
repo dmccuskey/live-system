@@ -1,0 +1,73 @@
+# The demo alone, on any machine with Docker. In this folder:
+#   docker compose up --build
+# then open http://localhost:3032 (to change the port, set WEB_PORT).
+#
+# The records are on a tmpfs: `docker compose up --force-recreate` starts the demo from nothing.
+name: virtual-infrastructure
+
+x-build: &build
+    context: ../..
+
+services:
+    data-service:
+        image: virtual-infrastructure-data-service
+        build:
+            <<: *build
+            dockerfile: examples/virtual-infrastructure/data-service/Dockerfile
+        environment:
+            # Set it to make the records read-only from outside. Unset: every client may write
+            DATA_SERVICE_WRITE_TOKEN: ${DATA_SERVICE_WRITE_TOKEN:-}
+        tmpfs:
+            - /data:uid=1000,gid=1000
+        healthcheck:
+            test: ['CMD', 'bun', '-e', "process.exit((await fetch('http://localhost:3030/health')).ok ? 0 : 1)"]
+            interval: 30s
+            timeout: 5s
+            start_period: 20s
+            start_interval: 1s
+        restart: unless-stopped
+
+    live-server:
+        image: virtual-infrastructure-live-server
+        build:
+            <<: *build
+            dockerfile: examples/virtual-infrastructure/live-server/Dockerfile
+        environment:
+            DATA_SERVICE_WRITE_TOKEN: ${DATA_SERVICE_WRITE_TOKEN:-}
+        # It fails its start without the data service
+        depends_on:
+            data-service:
+                condition: service_healthy
+        healthcheck:
+            test: ['CMD', 'bun', '-e', "process.exit((await fetch('http://localhost:3031/health')).ok ? 0 : 1)"]
+            interval: 30s
+            timeout: 5s
+            start_period: 20s
+            start_interval: 1s
+        restart: unless-stopped
+
+    # The door: the only one of the three reached from outside
+    web:
+        image: virtual-infrastructure-web
+        build:
+            <<: *build
+            dockerfile: examples/virtual-infrastructure/web/Dockerfile
+        environment:
+            # The origin of a page elsewhere that may read /health. Unset: none
+            HEALTH_ALLOW_ORIGIN: ${HEALTH_ALLOW_ORIGIN:-}
+            # The links of the web app's "About" dialog: what each says and where it leads, in
+            # pairs numbered 1 to 4. A pair that is unset, or half set, gives no link
+            ABOUT_LINK_1_LABEL: ${ABOUT_LINK_1_LABEL:-}
+            ABOUT_LINK_1_URL: ${ABOUT_LINK_1_URL:-}
+            ABOUT_LINK_2_LABEL: ${ABOUT_LINK_2_LABEL:-}
+            ABOUT_LINK_2_URL: ${ABOUT_LINK_2_URL:-}
+            ABOUT_LINK_3_LABEL: ${ABOUT_LINK_3_LABEL:-}
+            ABOUT_LINK_3_URL: ${ABOUT_LINK_3_URL:-}
+            ABOUT_LINK_4_LABEL: ${ABOUT_LINK_4_LABEL:-}
+            ABOUT_LINK_4_URL: ${ABOUT_LINK_4_URL:-}
+        ports:
+            - ${WEB_PORT:-3032}:3032
+        depends_on:
+            live-server:
+                condition: service_healthy
+        restart: unless-stopped

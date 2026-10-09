@@ -439,6 +439,14 @@ In manual mode the panel has the add control and each server a remove control, a
 
 A command that fails, for example one refused with `automatic_mode` because another browser changed the mode meanwhile, is shown as a notice at the top, which goes away after a few seconds.
 
+The header has an "About" control, which opens a dialog over the page: what the demo is, in a few sentences, and its links out. The links are not part of the build, and the web app knows nothing of what they lead to. It reads `/config.json` from its own origin as it starts, beside the startup and without waiting for it, and shows each link the file gives, a label and an address, in the file's order. So the same build runs anywhere, and whoever runs it decides what it links to: a page about the demo, a viewer of its records, its source. With no file, or no links in it, the dialog has its text alone ([Running the Demo](development.md#running-the-demo)).
+
+### In Containers
+
+The demo also runs as three containers, one per process. Only the web app's container is reached from outside: it serves the built web app and passes on what the web app sends to its own origin, records to the data service and commands to the live server, so the two servers have no address of their own outside. It passes on the live server's health address as well, which is healthy only while the live server is connected to the data service: one address reports on the whole demo.
+
+The records are kept in memory, so recreating the containers starts the demo from nothing, and the live server creates its first records again ([A First Start](#a-first-start)). An open page recovers by itself, since a web app brings its stores in line whenever it reconnects ([ADR 017](decisions/017-resync-on-reconnect.md)). How to run it: [Running the Demo in Containers](development.md#running-the-demo-in-containers).
+
 ## Demonstration Goals
 
 The demo should make several architectural properties observable.

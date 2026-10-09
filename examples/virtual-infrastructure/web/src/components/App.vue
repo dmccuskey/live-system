@@ -2,6 +2,7 @@
 // The whole page. It is mounted at once and renders from the system status, the connection status and the stores.
 import { computed } from 'vue'
 import { useWebApp } from '../composables/web-app.ts'
+import AboutDialog from './AboutDialog.vue'
 import ServersPanel from './ServersPanel.vue'
 import SystemStatus from './SystemStatus.vue'
 import UsersPanel from './UsersPanel.vue'
@@ -17,6 +18,7 @@ const startupError = computed(() => (status.error instanceof Error ? status.erro
         <header class="header">
             <h1>Virtual Infrastructure Simulator</h1>
             <SystemStatus v-if="status.phase === 'running'" />
+            <AboutDialog />
         </header>
 
         <p v-if="commandError" class="notice notice--error" role="alert" data-test="command-error">

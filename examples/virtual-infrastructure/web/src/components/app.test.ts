@@ -93,6 +93,14 @@ describe('App', () => {
         expect(exists(mount(App, { global }), 'disconnected')).toBe(false)
     })
 
+    test.each(['starting', 'running', 'failed', 'stopped'] as const)('offers "About" while %s', phase => {
+        const { status, global } = createTestApp()
+
+        status.phase = phase
+
+        expect(exists(mount(App, { global }), 'about-open')).toBe(true)
+    })
+
     test('shows why a command failed, until dismissed', async () => {
         const { app, global } = createTestApp(() => ({
             status: 'failed',
