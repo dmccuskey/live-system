@@ -113,18 +113,27 @@ Application
 
 ## The LiveSystem Object
 
-An application creates one instance of `LiveSystem`, adds its managers, and boots it:
+An application creates one instance of `LiveSystem`, adds its managers, and boots it. The demo's live server does it so, trimmed to what shows the pattern ([the whole of it](../examples/virtual-infrastructure/live-server/src/app.ts)):
 
 ```ts
-const system = new LiveSystem<AppContext>({
-    context: { events, pinia },
+const system = new LiveSystem<DemoContext>({
+    context: { clock, events, pinia, random },
     router,
-    connect: () => connection.open(),
-    disconnect: () => connection.close(),
+    connect: () => connection.connect(),
+    disconnect: () => connection.disconnect(),
 })
 
-system.addManager(context => new UserManager(context, userSource, useUsers(context.pinia)))
-system.addManager(context => new ServerManager(context, serverSource, useServers(context.pinia)))
+system.addManager(context => new UserManager(context, connection.recordSource(SERVICES.users), useUserStore(pinia)))
+system.addManager(
+    context =>
+        new ServerManager(
+            context,
+            connection.recordSource(SERVICES.servers),
+            useServerStore(pinia),
+            connection.recordSource(SERVICES.managers),
+        ),
+)
+// and likewise the ManagerRecords
 
 await system.boot()
 ```
@@ -399,39 +408,47 @@ For example, in the [demo](architecture-demo.md#manager-records) the `ServerMana
 
 ### The Context
 
-A manager receives as little as possible. The context holds only what every manager shares. Its type is the application's own, since the events are the application's choice:
+A manager receives as little as possible. The context holds only what every manager shares. Its type is the application's own, since the events are the application's choice. The demo's:
 
 ```ts
-interface AppContext {
-    events: EventBus<AppEvents>
+interface DemoContext {
+    clock: Clock
+    events: EventBus<DemoEvents>
     pinia: Pinia
+    random: () => number
 }
 ```
 
-The application's managers extend `BaseManager<AppContext>`, and the system is a `LiveSystem<AppContext>`.
+The demo's managers take that type (`LiveObjectManager<UserRecord, VirtualUser, DemoContext>`), and its system is a `LiveSystem<DemoContext>`.
 
-The event bus is passed in rather than reached for globally, so a test can give a manager its own. The Pinia instance holds the application's local reactive state, one store per kind of record.
+The event bus is passed in rather than reached for globally, so a test can give a manager its own. The Pinia instance holds the application's local reactive state, one store per kind of record. The [clock](#time) and the source of random numbers are the demo's own additions, there for the same reason as the bus: a test gives its own.
 
 ### Routes
 
 The router is not in the context. A manager declares the commands it handles, and the system registers them when the manager is added:
 
 ```ts
-class ServerManager extends LiveObjectManager<VirtualServerRecord, VirtualServer, AppContext> {
-    routes() {
+class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer, DemoContext> {
+    override routes(): Routes {
         return {
-            'server/:id/restart': this.restart,
+            // 'servers/add' and 'servers/:id/remove'
+            [SERVER_ROUTES.add]: this.addServer,
+            [SERVER_ROUTES.remove]: this.removeServer,
+            // 'managers/:key/update' with this manager's key: 'managers/servers/update'
+            [fillRoute(MANAGER_ROUTES.update, { key: MANAGER_KEYS.servers })]: this.updateSettings,
         }
     }
 }
 ```
 
+The patterns are constants of the demo's [protocol](#protocols), which its web app builds its commands from as well.
+
 `routes()` returns plain functions, which carry no reference to the manager. The system adds that reference when it registers them: each route in the router records the manager that owns it, and the handler is called with that manager as `this`.
 
 ```text
 route
-├── pattern    'server/:id/restart'
-├── handler    restart
+├── pattern    'servers/:id/remove'
+├── handler    removeServer
 └── manager    the ServerManager that declared it
 ```
 
@@ -440,8 +457,16 @@ Because each route knows its manager, removing a manager also removes its routes
 A handler receives the route's parameters and the command's data. What it returns becomes the response's `result`:
 
 ```ts
-restart(params: RouteParams, data: { force: boolean }) {
-    // params.id is '42' for the route 'server/42/restart'
+async addServer(): Promise<AddServerResult> {
+    // what it resolves with, { id }, is the response's result
+}
+
+async removeServer(params: RouteParams): Promise<void> {
+    // params.id is '42' for the route 'servers/42/remove'
+}
+
+async updateSettings(params: RouteParams, data: SettingsUpdate): Promise<void> {
+    // data is { scalingMode: 'manual' } for a command with that as its data
 }
 ```
 
@@ -872,9 +897,9 @@ In a web application, Vue is used in the standard way: the same reactive state a
 The store is [Pinia](https://pinia.vuejs.org), on the server as on the web: Pinia needs no Vue app. Each kind of record has a store of its own, defined in one line:
 
 ```ts
-const useServers = defineRecordStore<VirtualServerRecord>('servers')
+const useServerStore = defineRecordStore<ServerRecord>(SERVICES.servers)
 
-const servers = useServers(pinia)
+const servers = useServerStore(pinia)
 
 servers.records // every record, by ID
 servers.get('42') // one record, or undefined
@@ -913,13 +938,17 @@ The store is how an application shares its data. It is there so that every part 
 
 ```ts
 // in the ServerManager: a setting takes effect when it comes back in the store
-async start() {
+override async start() {
+    await super.start()
+
     const managers = useManagerStore(this.context.pinia)
 
-    this.stopWatching = watch(
-        () => Object.values(managers.records).find(record => record.key === 'servers'),
-        record => this.settingsChanged(record ?? DEFAULT_MANAGER_RECORDS.servers),
-        { immediate: true, flush: 'sync' },
+    this.#subscriptions.push(
+        watch(
+            () => Object.values(managers.records).find(record => record.key === MANAGER_KEYS.servers),
+            record => this.#settingsChanged(record),
+            { immediate: true, flush: 'sync' },
+        ),
     )
 }
 ```
@@ -986,9 +1015,9 @@ A `Router` is an ordinary object, usable with or without a `LiveSystem`:
 
 ```ts
 const router = new Router()
-router.register('server/:id/restart', (params, data) => { ... })
+router.register('managers/:key/update', (params, data) => { ... })
 
-const response = await router.handle({ route: 'server/42/restart', data: { force: false } })
+const response = await router.handle({ route: 'managers/servers/update', data: { scalingMode: 'manual' } })
 ```
 
 - A pattern is made of literal and `:param` segments, and matches a route with the same number of segments. Where several patterns match, the first segment in which they differ decides, and a literal beats a `:param`.
@@ -1003,7 +1032,7 @@ const response = await router.handle({ route: 'server/42/restart', data: { force
 
     An unknown route fails with the code `not_found`. A handler chooses its own code by throwing a `CommandError`; anything else it throws is reported with the code `internal`.
 
-`fillRoute('server/:id/restart', { id: '42' })` builds a route from its pattern, for an application's command creators. It throws on a missing parameter.
+`fillRoute('servers/:id/remove', { id: '42' })` builds a route from its pattern, for an application's command creators. It throws on a missing parameter.
 
 ### The CommandServer
 
@@ -1011,12 +1040,12 @@ The `CommandServer` is the HTTP adapter. A command is posted to one path (`/comm
 
 ```ts
 const commands = new CommandServer({ router })
-commands.listen({ port: 3040 })
+commands.listen({ port: 3031 })
 ```
 
 ```text
 POST /command
-{ "route": "server/42/restart", "data": { "force": false } }
+{ "route": "managers/servers/update", "data": { "scalingMode": "manual" } }
 ```
 
 The response body is always the `CommandResponse`. The HTTP status is 200 when the command was accepted, 400 for a body that is not a command, 404 for an unknown route, 405 for anything but POST, and 500 for any other failure. `handle(request)` works on the standard `Request` and `Response`, so the same server can be mounted in another HTTP server; `listen()` uses Bun's.
@@ -1028,9 +1057,9 @@ Given a `health` function, the server also answers a GET to `/health` (or the `h
 The `CommandClient` is the other end, in a web app. It posts a command to the `CommandServer` and returns its response:
 
 ```ts
-const commands = new CommandClient({ url: 'http://localhost:3040/command' })
+const commands = new CommandClient({ url: 'http://localhost:3031/command' })
 
-const response = await commands.send(restartServer('42', { force: false }))
+const response = await commands.send(createUpdateManagerCommand('servers', { scalingMode: 'manual' }))
 ```
 
 `send` resolves with the response when the command was accepted (`{ status: 'accepted', result? }`) and rejects with a `CommandError` when it was not. Every failure is a `CommandError`, so a component catches one type and decides what to show. The server's errors keep their names, messages and codes. The client adds two codes for the transport: `unreachable` when the request got no answer (the cause is kept in `cause`), and `bad_response` when the answer was not a `CommandResponse`. Nothing is retried.
@@ -1059,12 +1088,12 @@ This distinction allows independent components to communicate without requiring 
 
 There is no single channel that carries every event. Events come from several sources, each with its own way to subscribe:
 
-| Source         | What it reports                                                     | Example                             |
-| -------------- | ------------------------------------------------------------------- | ----------------------------------- |
-| Record source  | a record of one kind was created, updated, patched, or removed      | a `VirtualServerRecord` was patched |
-| Reactive state | a value in the local reactive state changed                         | the number of servers changed       |
-| Event bus      | a domain event, published by one part of the application for others | `server.overloaded`                 |
-| Lifecycle      | the system moved to another lifecycle state                         | the system reached `RUNNING`        |
+| Source         | What it reports                                                     | Example                       |
+| -------------- | ------------------------------------------------------------------- | ----------------------------- |
+| Record source  | a record of one kind was created, updated, patched, or removed      | a `ServerRecord` was patched  |
+| Reactive state | a value in the local reactive state changed                         | the number of servers changed |
+| Event bus      | a domain event, published by one part of the application for others | `commandFinished`             |
+| Lifecycle      | the system moved to another lifecycle state                         | the system reached `RUNNING`  |
 
 Conceptually:
 
@@ -1076,15 +1105,15 @@ source.onPatched(record => {
 
 // Reactive state: a change to a value
 watch(
-    () => state.servers.length,
+    () => Object.keys(servers.records).length,
     count => {
         this.handleServerCount(count)
     },
 )
 
 // Event bus: a domain event
-events.on('server.overloaded', event => {
-    this.handleOverloaded(event)
+events.on('commandFinished', event => {
+    this.handleFinished(event)
 })
 ```
 
@@ -1093,30 +1122,33 @@ The event bus is a tool LiveSystem provides, not a requirement. Data is shared t
 - **Live objects communicating among themselves, as live objects.** In the demo, the virtual users' commands and the servers' answers.
 - **A part reporting data for a record it does not own, to the manager that owns it.** The part that has the data does not write another manager's record itself: it announces the data as an event, and the owner writes it. The demo has no case of this at present, since each of its parts writes only records it owns.
 
-Such an event is named after the part that reports (`orders.backlogChanged`), so that another part's report can be told apart from it.
+An event's name is the application's to choose: to the bus it is only a string, and its form changes nothing in how it is delivered. Where several parts report the same kind of data, naming the part in the event (`orders.backlogChanged`) is one way to tell their reports apart.
 
 An application whose record changes and reactive state already say everything needs no event bus.
 
 ### The Event Bus
 
-`EventBus<E>` is typed by the application's own event map, from an event's name to its payload:
+`EventBus<E>` is typed by the application's own event map, from an event's name to its payload. The demo's, in its protocol:
 
 ```ts
-interface AppEvents {
-    'server.overloaded': { serverId: string; load: number }
-    'server.drained': { serverId: string }
-    'system.idle': void
+interface DemoEvents {
+    commandRequested: CommandRequestedEvent
+    commandQueued: CommandQueuedEvent
+    commandStarted: CommandStartedEvent
+    commandRefused: CommandRefusedEvent
+    commandFinished: CommandFinishedEvent
+    userRemoved: UserRemovedEvent
 }
 
-const events = new EventBus<AppEvents>()
+const events = new EventBus<DemoEvents>()
 
-const unsubscribe = events.on('server.overloaded', event => { ... })
-events.once('server.drained', event => { ... })
+const unsubscribe = events.on('commandFinished', event => { ... })
+events.once('userRemoved', event => { ... })
 
-events.emit('server.overloaded', { serverId: '42', load: 0.9 })
-events.emit('system.idle')
+events.emit('userRemoved', { userId: '12' })
 ```
 
+- An event whose payload is `void` is emitted with its name alone: `events.emit('idle')`.
 - `on` and `once` return an `Unsubscribe` function, the only way to end a subscription ("Event and Subscription Cleanup").
 - Delivery is synchronous, in the order the listeners subscribed. A listener added or removed during delivery takes effect from the next event.
 - A listener that throws stops neither the other listeners nor the emitter. The error goes to the `onError` option, which logs with `console.error` by default. An async listener is not awaited, and its rejection goes to `onError` too.

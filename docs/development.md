@@ -1,6 +1,6 @@
 # Development
 
-LiveSystem is at the design stage. The design is in [Architecture](architecture.md), and the reasons behind it are in the [decision records](decisions/).
+LiveSystem's primitives are implemented, and the demo runs on them. The design is in [Architecture](architecture.md), and the reasons behind it are in the [decision records](decisions/).
 
 ## Current Baseline
 
@@ -20,7 +20,7 @@ The repository is a [Bun](https://bun.sh) workspace with every package in place.
 
 `micro-fsm` and `feathers-connect` are built to move to repositories of their own, so neither may depend on `live-system`. Their tests check this. `feathers-connect` therefore satisfies `RecordSource` by its shape, without importing it, and a test in the demo's live server, which depends on both, fails the typecheck if the two drift apart.
 
-The demo's protocol is laid out by domain: `users/` and `servers/` each hold a record, routes, commands and constants file, named with the domain first (`users.record.ts`, `users.routes.ts`, `users.commands.ts`, `users.constants.ts`), beside `services.ts` and `events.ts`. A command creator is named `create…Command`, for example `createAddUserCommand()`. Import a file by its path, for example `@virtual-infrastructure/protocol/users/users.record`.
+The demo's protocol is laid out by domain: `users/`, `servers/` and `managers/` each hold a record, routes, commands and constants file, named with the domain first (`users.record.ts`, `users.routes.ts`, `users.commands.ts`, `users.constants.ts`), beside `services.ts` and `events.ts`. A command creator is named `create…Command`, for example `createAddUserCommand()`. Import a file by its path, for example `@virtual-infrastructure/protocol/users/users.record`.
 
 ## Design Guidelines
 
@@ -242,5 +242,4 @@ These are ideas, not plans. Each needs discussion and a concrete use case before
 - **A shared scheduling helper.** Only once several owners need the same thing ([ADR 015](decisions/015-timers-belong-to-owner.md)).
 - **Generated protocol types**, from a schema or an API description ([ADR 010](decisions/010-applications-own-protocol.md)).
 - **A devtools package** for inspecting a running system.
-- **Docker images for the demo**, started with one command.
 - **More examples.** A factory or warehouse simulator, and an application built in its own repository on the published packages.
