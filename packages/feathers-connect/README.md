@@ -31,7 +31,8 @@ await connection.disconnect()
 - One socket connection (socket.io), shared by every record source.
 - `connect()` resolves once connected and rejects when the data service can't be reached.
 - Record sources can be taken, and listeners attached, before `connect()`.
-- `find()` always returns an array, whether the service returns a page, an array or a single record.
+- `find()` always returns an array of every record, whether the service returns pages, an array or a single record.
+- A paginated service is read page after page.
 - Each subscription returns a function that ends it.
 - A backend that names its ID otherwise (`_id`) is converted with `idField`.
 - A failed call rejects with Feathers' own error, unchanged.
@@ -182,7 +183,7 @@ connection.recordSource<Message>('messages', { idField: '_id', query: { channel:
 Returns a [`FeathersRecordSource<T>`](#feathersrecordsource) over the service at `path`. The record type `T` must have a string `id`. The options:
 
 - `idField`: the backend's name for the record ID, when it is not `id`. Records come back with `id` instead of that field, and go out with that field instead of `id`. The value is not converted: a backend with numeric IDs gives numbers.
-- `query`: a fixed Feathers query that every `find()` sends, for a source that covers only a part of the service's records.
+- `query`: a fixed Feathers query that every `find()` sends, for a source that covers only a part of the service's records. With a `$limit` of its own, `find()` returns that one page and reads no further.
 
 Each call returns a new record source. They share the connection.
 
@@ -192,19 +193,27 @@ Each call returns a new record source. They share the connection.
 
 ### FeathersRecordSource
 
-|                                                                                            |                                                                                             |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `find(): Promise<T[]>`                                                                     | every record, or every record matching the fixed `query`                                    |
-| `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                                  |
-| `isNotFound(error): boolean`                                                               | whether what a call rejected with is Feathers' `NotFound`: the record does not exist        |
-| `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one          |
-| `update(id, data): Promise<T>`                                                             | replaces a record                                                                           |
-| `patch(id, data): Promise<T>`                                                              | changes some fields of a record                                                             |
-| `remove(id): Promise<T>`                                                                   | removes a record and returns it                                                             |
-| `onCreated(listener)`, `onUpdated(listener)`, `onPatched(listener)`, `onRemoved(listener)` | hear a change, made by any client; each returns a function that ends the subscription       |
-| `onReconnected(listener)`                                                                  | hear the connection being made again after it was lost, see [onReconnected](#onreconnected) |
+|                                                                                            |                                                                                                         |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `find(): Promise<T[]>`                                                                     | every record, or every record matching the fixed `query`, see [paginated services](#paginated-services) |
+| `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                                              |
+| `isNotFound(error): boolean`                                                               | whether what a call rejected with is Feathers' `NotFound`: the record does not exist                    |
+| `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one                      |
+| `update(id, data): Promise<T>`                                                             | replaces a record                                                                                       |
+| `patch(id, data): Promise<T>`                                                              | changes some fields of a record                                                                         |
+| `remove(id): Promise<T>`                                                                   | removes a record and returns it                                                                         |
+| `onCreated(listener)`, `onUpdated(listener)`, `onPatched(listener)`, `onRemoved(listener)` | hear a change, made by any client; each returns a function that ends the subscription                   |
+| `onReconnected(listener)`                                                                  | hear the connection being made again after it was lost, see [onReconnected](#onreconnected)             |
 
 A call that fails rejects with Feathers' error as it arrived: a missing record gives an error with the `name` `'NotFound'` and the `code` `404`.
+
+#### Paginated Services
+
+From a service that returns pages, `find()` reads one page after another, with `$skip`, until it has as many records as the service counts (`total`), and returns them as one array. A service that does not count is read until a page is not full. An empty page ends the reading in either case.
+
+The pages are separate calls, so the result is not a snapshot of one moment. A record created or removed while they are read is reported by its change event, as always. But a removal moves the records behind it up by one, so a record that did not change can be left out of the result, and a creation can put one in it twice.
+
+A fixed `query` with a `$limit` asks for that many records: `find()` then returns the one page and reads no further. A `$skip` in the fixed `query` is where the reading starts.
 
 #### Calls That Are Not Answered
 

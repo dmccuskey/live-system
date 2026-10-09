@@ -12,6 +12,8 @@ type Listener = (record: any) => void
 class FakeService implements FeathersServiceLike {
     calls: unknown[][] = []
     result: unknown = undefined
+    /** Answers for the next calls, one each, before `result`. */
+    results: unknown[] = []
     listeners = new Map<string, Listener[]>()
 
     async find(params?: unknown) {
@@ -48,6 +50,7 @@ class FakeService implements FeathersServiceLike {
     #call(...call: unknown[]) {
         this.calls.push(call)
 
+        if (this.results.length > 0) return this.results.shift()
         if (this.result instanceof Error) throw this.result
 
         return this.result
@@ -73,6 +76,93 @@ describe('find', () => {
         service.result = { total: 1, limit: 10, skip: 0, data: [{ id: 'a', name: 'A' }] }
 
         expect(await source.find()).toEqual([{ id: 'a', name: 'A' }])
+    })
+
+    test('reads every page of a paginated service', async () => {
+        const { service, source } = setup()
+        service.results = [
+            { total: 5, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] },
+            { total: 5, limit: 2, skip: 2, data: [{ id: 'c' }, { id: 'd' }] },
+            { total: 5, limit: 2, skip: 4, data: [{ id: 'e' }] },
+        ]
+
+        expect((await source.find()).map(item => item.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
+        expect(service.calls).toEqual([
+            ['find', undefined],
+            ['find', { query: { $skip: 2 } }],
+            ['find', { query: { $skip: 4 } }],
+        ])
+    })
+
+    test('keeps the fixed query on every page', async () => {
+        const { service, source } = setup({ query: { kind: 'x' } })
+        service.results = [
+            { total: 2, limit: 1, skip: 0, data: [{ id: 'a' }] },
+            { total: 2, limit: 1, skip: 1, data: [{ id: 'b' }] },
+        ]
+        await source.find()
+
+        expect(service.calls).toEqual([
+            ['find', { query: { kind: 'x' } }],
+            ['find', { query: { kind: 'x', $skip: 1 } }],
+        ])
+    })
+
+    test('reads on from the $skip of the fixed query', async () => {
+        const { service, source } = setup({ query: { $skip: 1 } })
+        service.results = [
+            { total: 3, limit: 1, skip: 1, data: [{ id: 'b' }] },
+            { total: 3, limit: 1, skip: 2, data: [{ id: 'c' }] },
+        ]
+
+        expect((await source.find()).map(item => item.id)).toEqual(['b', 'c'])
+        expect(service.calls).toEqual([
+            ['find', { query: { $skip: 1 } }],
+            ['find', { query: { $skip: 2 } }],
+        ])
+    })
+
+    test('returns the one page of a query with its own $limit', async () => {
+        const { service, source } = setup({ query: { $limit: 2 } })
+        service.result = { total: 5, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] }
+
+        expect((await source.find()).map(item => item.id)).toEqual(['a', 'b'])
+        expect(service.calls).toHaveLength(1)
+    })
+
+    test('stops at an empty page, though the count says more', async () => {
+        const { service, source } = setup()
+        service.results = [
+            { total: 3, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] },
+            { total: 3, limit: 2, skip: 2, data: [] },
+        ]
+
+        expect((await source.find()).map(item => item.id)).toEqual(['a', 'b'])
+        expect(service.calls).toHaveLength(2)
+    })
+
+    test('without a count, reads until a page is not full', async () => {
+        const { service, source } = setup()
+        service.results = [
+            { limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] },
+            { limit: 2, skip: 2, data: [{ id: 'c' }] },
+        ]
+
+        expect((await source.find()).map(item => item.id)).toEqual(['a', 'b', 'c'])
+        expect(service.calls).toHaveLength(2)
+    })
+
+    test('converts the ID field on every page', async () => {
+        const { service, source } = setup({ idField: '_id' })
+        service.results = [
+            { total: 2, limit: 1, skip: 0, data: [{ _id: 'a', name: 'A' }] },
+            { total: 2, limit: 1, skip: 1, data: [{ _id: 'b', name: 'B' }] },
+        ]
+
+        expect(await source.find()).toEqual([
+            { id: 'a', name: 'A' },
+            { id: 'b', name: 'B' },
+        ])
     })
 
     test('returns a single record as an array of one', async () => {

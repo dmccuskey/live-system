@@ -184,13 +184,25 @@ describe('a record source over the connection', () => {
         expect(await onlyA.find()).toEqual([{ id: 'a', name: 'A' }])
     })
 
-    test('find() returns the records of a paginated service', async () => {
-        app.use('pages', new MemoryService({ id: 'id', paginate: { default: 10, max: 10 } }))
+    test('find() returns every record of a paginated service, beyond its first page', async () => {
+        app.use('pages', new MemoryService({ id: 'id', paginate: { default: 2, max: 2 } }))
         const source = connection.recordSource<Item>('pages')
         await connection.connect()
-        await source.create({ id: 'a', name: 'A' })
 
-        expect(await source.find()).toEqual([{ id: 'a', name: 'A' }])
+        for (const id of ['a', 'b', 'c', 'd', 'e']) await source.create({ id, name: id.toUpperCase() })
+
+        expect((await source.find()).map(item => item.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    })
+
+    test('find() with a $limit in the fixed query returns that one page', async () => {
+        app.use('pages', new MemoryService({ id: 'id', paginate: { default: 2, max: 10 } }))
+        const source = connection.recordSource<Item>('pages')
+        const firstThree = connection.recordSource<Item>('pages', { query: { $limit: 3 } })
+        await connection.connect()
+
+        for (const id of ['a', 'b', 'c', 'd', 'e']) await source.create({ id, name: id.toUpperCase() })
+
+        expect((await firstThree.find()).map(item => item.id)).toEqual(['a', 'b', 'c'])
     })
 
     test('get() of a missing record rejects with NotFound', async () => {
