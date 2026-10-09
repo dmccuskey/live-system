@@ -191,6 +191,21 @@ The `VirtualUser` does the counting. It listens on the event bus for the outcome
 
 The numbers are placeholders, in the protocol's `users/users.constants.ts`, and the arithmetic is in the live server's `frustration.ts`.
 
+### What Is Served
+
+The frustration is an effect. Its cause is in the user's record too, as `served`: of the user's commands that came to an end in the last 30 seconds, the share that completed, a fraction from 0 to 1 in whole percent.
+
+| Outcome                                              | Counts as  |
+| ---------------------------------------------------- | ---------- |
+| The command completed, whether or not it waited      | served     |
+| The command was refused: the user had one waiting    | not served |
+| The command was aborted: its server was removed      | not served |
+| The command was dropped: its user or the system left | nothing    |
+
+With no command come to an end in that time, all is served. It is a share and not a rate: a user sends its commands at random intervals, so the number it completes in a minute moves about its rate in a healthy system too. A long wait does not show in it, only in the frustration.
+
+The `VirtualUser` keeps this as it keeps its frustration: from the same events, in memory, written to its record through `debouncePatch` when the share changes. An outcome leaves the share 30 seconds after it happened, on a timer of the context's clock that the user holds only while it has outcomes to forget.
+
 Frustration is therefore an emergent property of the system rather than a manually controlled variable.
 
 This allows the demo to show that infrastructure health and user experience are related but not identical.
@@ -210,6 +225,7 @@ interface UserRecord {
     commandsPerMinute: number
     commandMix: { search: number; standard: number; agentic: number }
     frustration: number
+    served: number
 }
 
 interface ServerRecord {
@@ -232,17 +248,19 @@ interface ServerManagerRecord {
     queueLength: number
     waitingForRoom: number
     utilization: number
+    throughput: number
+    requested: number
 }
 ```
 
-A user's command mix is three fractions that sum to 1, and its frustration runs from 0 to 1.
+A user's command mix is three fractions that sum to 1, and its frustration and what it is served ([What Is Served](#what-is-served)) each run from 0 to 1.
 
 A server has one kind of capacity, counted in whole units, and a command costs a whole number of them. For example, a server of 10 units running one agentic command that costs 4 has a load of 4. Whole numbers are easier to reconcile by eye than fractions of a server.
 
 A manager record belongs to one manager, and its `key` names that manager ([Architecture](architecture.md#a-record-per-manager)). Each manager's record has its own type. There is one so far, with the key `servers`, for the `ServerManager`. It holds two kinds of data:
 
 - **What the Demo User has set:** the scaling mode and the maximum utilization, a fraction.
-- **What the manager reports of the servers as a whole:** the number of commands that wait in the queue, how many of them wait for room on a server (the others wait for their own user, who has as many running as a user may), and the system utilization, which is the 10-second average that automatic scaling goes by ([Automatic](#automatic)), a fraction from 0 to 1 in whole percent.
+- **What the manager reports of the servers as a whole:** the number of commands that wait in the queue, how many of them wait for room on a server (the others wait for their own user, who has as many running as a user may), the system utilization, which is the 10-second average that automatic scaling goes by ([Automatic](#automatic)), a fraction from 0 to 1 in whole percent, the throughput, which is the number of commands the servers completed in the last minute, and the number the users requested in that minute, the refused ones too.
 
 A manager that gains settings or something to report gets a record of its own, in the same service.
 
@@ -309,7 +327,7 @@ UI ──▶ managers/servers/update ──▶ ServerManager ──▶ data serv
                                          └── watches ── manager store
 ```
 
-**What the manager reports it writes itself.** The `ServerManager` produces the queue's length and the utilization, and writes them to its record as they change, changes close together as one write. The utilization is written after each sample, when it has changed. It leaves a draining server out, because its capacity is on its way out. The manager does not read these fields back from the store.
+**What the manager reports it writes itself.** The `ServerManager` produces the queue's length, the utilization, the throughput and what was requested, and writes them to its record as they change, changes close together as one write. All but the queue's length are written after each sample, when they have changed. It leaves a draining server out, because its capacity is on its way out. The manager does not read these fields back from the store.
 
 **The store is mirrored by a manager of its own.** The manager records share one store, and a store has one manager that keeps it a projection of the data service. That is `ManagerRecords`, an empty `DataManager`: it writes no record.
 
@@ -388,15 +406,17 @@ Charlie                            [-]
 The user profile displays:
 
 ```text
-Alice
+Alice  8/min
 
-Activity:       8 commands/min
+Activity:       [bar] 100%
 Search:         70%
 Standard:       20%
 Agentic:        10%
 
-Frustration:    14%
+Frustration:    [bar] 14%
 ```
+
+The rate beside the name is how many commands the user sends in a minute. The Activity bar is how much of that is served ([What Is Served](#what-is-served)).
 
 The command mix is visible but not editable.
 
@@ -419,15 +439,17 @@ A component reads the stores and sends commands, and nothing else. It changes no
 
 The page is mounted at once and renders from three things ([Starting a Web App](architecture.md#starting-a-web-app)):
 
-| What              | Shown as                                                                                                                                                                                                                                        |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| System status     | a loading line while starting, the reason when the startup failed, the panels when running                                                                                                                                                      |
-| Connection status | a warning above the panels while the data service is not connected                                                                                                                                                                              |
-| Records           | the panels: a card per user and per server, the mode, the maximum utilization, the utilization and the command queue from the `ServerManager`'s record, the queue as the commands that wait for their own user and those that wait for capacity |
+| What              | Shown as                                                                                                                                                                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System status     | a loading line while starting, the reason when the startup failed, the panels when running                                                                                                                                                                                          |
+| Connection status | a warning above the panels while the data service is not connected                                                                                                                                                                                                                  |
+| Records           | the panels: a card per user and per server, the mode, the maximum utilization, the utilization, the command queue, the throughput and what was requested from the `ServerManager`'s record, the queue as the commands that wait for their own user and those that wait for capacity |
 
 The utilization jumps with every command that starts or ends, so the record holds its average over 10 seconds, which the live server keeps and automatic scaling goes by ([Automatic](#automatic)). The page shows it as it is: every browser sees the same value. In automatic mode it is shown in red while it is above the maximum utilization.
 
-A user's frustration bar is green below 25%, yellow below 50%, orange below 75% and red from there on.
+A user's frustration bar is green below 25%, yellow below 50%, orange below 75% and red from there on. Its Activity bar runs the other way, since there a full bar is the good one: green from 90% served, yellow from 75%, orange from 50% and red below.
+
+The throughput is shown as the commands completed in the last minute beside the commands requested in that minute. Both are counted by the `ServerManager` over the same time, so the difference between them is what was refused or aborted, or is still waiting or running. With the system keeping up the two are about equal.
 
 The settings and the status are found by their key, `servers`. While a record is missing, the protocol's defaults are shown.
 

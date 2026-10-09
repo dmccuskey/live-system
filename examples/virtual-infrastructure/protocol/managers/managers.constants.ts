@@ -20,6 +20,8 @@ export const DEFAULT_MANAGER_RECORDS: { [K in ManagerKey]: Omit<ManagerRecords[K
         queueLength: 0,
         waitingForRoom: 0,
         utilization: 0,
+        throughput: 0,
+        requested: 0,
     },
 }
 

@@ -5,6 +5,7 @@ import type {
     CommandStartedEvent,
 } from '@virtual-infrastructure/protocol/events'
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
+import { SERVED_WINDOW } from '@virtual-infrastructure/protocol/users/users.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { debouncePatch, LiveObject } from 'live-system/core'
 import type {
@@ -18,8 +19,9 @@ import type {
 import type { DemoContext } from './context.ts'
 import { afterAborted, afterCompleted, afterQueued, afterRefused } from './frustration.ts'
 import { pickCommandType } from './profile.ts'
+import { RecentWindow } from './recent-window.ts'
 
-// How long the record's frustration waits for another change before it is written, in milliseconds
+// How long what the user writes to its record waits for another change before it is written, in milliseconds
 const WRITE_DELAY = 100
 
 /**
@@ -33,6 +35,10 @@ const WRITE_DELAY = 100
  * What becomes of its commands arrives as events too, and moves its
  * frustration: a refusal, a wait in the queue and an abort add to it, a
  * completed command relieves it.
+ *
+ * It also keeps how well it is served: of its commands that came to an end
+ * within `SERVED_WINDOW`, the share that completed. That is what is behind the
+ * frustration, for the UI to show beside it.
  */
 export class VirtualUser extends LiveObject {
     readonly id: string
@@ -40,6 +46,10 @@ export class VirtualUser extends LiveObject {
     #context: DemoContext
     #cancelTimer: CancelTimer | undefined
     #frustration = 0
+    // Whether each of its commands that came to an end of late completed, and the share as last written
+    #outcomes = new RecentWindow<boolean>(SERVED_WINDOW)
+    #served = 1
+    #cancelExpiry: CancelTimer | undefined
     // When each of its commands began to wait in the queue, and began to run, by the command's ID
     #queuedAt = new Map<string, number>()
     #startedAt = new Map<string, number>()
@@ -71,9 +81,20 @@ export class VirtualUser extends LiveObject {
         return this.#frustration
     }
 
-    /** No command outlives the live server, so neither does the frustration: what the record says of an earlier run is cleared. */
+    /** The share of its commands of late that were served, a fraction from 0 to 1. With none, 1. */
+    get served(): number {
+        return this.#served
+    }
+
+    /**
+     * No command outlives the live server, so neither does the frustration nor what was served:
+     * what the record says of an earlier run is cleared.
+     */
     override async init(): Promise<void> {
-        if ((this.#record?.frustration ?? 0) !== 0) this.#write.patch({ frustration: 0 })
+        const record = this.#record
+
+        if ((record?.frustration ?? 0) !== 0) this.#write.patch({ frustration: 0 })
+        if (record && record.served !== 1) this.#write.patch({ served: 1 })
 
         await this.#write.flush()
     }
@@ -114,6 +135,8 @@ export class VirtualUser extends LiveObject {
     protected override release(): void {
         this.#cancelTimer?.()
         this.#cancelTimer = undefined
+        this.#cancelExpiry?.()
+        this.#cancelExpiry = undefined
         this.#write.cancel()
 
         for (const unsubscribe of this.#subscriptions.splice(0)) unsubscribe()
@@ -163,7 +186,10 @@ export class VirtualUser extends LiveObject {
     #refused(event: CommandRefusedEvent): void {
         this.#queuedAt.delete(event.commandId)
 
-        if (event.reason === 'queue_full') this.#set(afterRefused(this.#frustration))
+        if (event.reason !== 'queue_full') return
+
+        this.#set(afterRefused(this.#frustration))
+        this.#outcome(false)
     }
 
     #finished(event: CommandFinishedEvent): void {
@@ -173,12 +199,39 @@ export class VirtualUser extends LiveObject {
 
         if (event.outcome === 'completed') {
             this.#set(afterCompleted(this.#frustration))
+            this.#outcome(true)
             return
         }
 
         const ran = startedAt === undefined ? 0 : this.#since(startedAt)
 
         this.#set(afterAborted(this.#frustration, ran / COMMAND_TYPES[event.type].duration))
+        this.#outcome(false)
+    }
+
+    // One of its commands has come to an end: served, or not
+    #outcome(isServed: boolean): void {
+        this.#outcomes.add(this.#context.clock.now(), isServed)
+        this.#reportServed()
+    }
+
+    // Writes the share when it has changed, and looks again when the oldest outcome leaves the window
+    #reportServed(): void {
+        const now = this.#context.clock.now()
+        const outcomes = this.#outcomes.values(now)
+        const served =
+            outcomes.length === 0 ? 1 : Math.round((outcomes.filter(Boolean).length / outcomes.length) * 100) / 100
+
+        if (served !== this.#served) {
+            this.#served = served
+            this.#write.patch({ served })
+        }
+
+        const untilNext = this.#outcomes.untilNext(now)
+
+        this.#cancelExpiry?.()
+        this.#cancelExpiry =
+            untilNext === undefined ? undefined : this.#context.clock.after(untilNext, () => this.#reportServed())
     }
 
     // The milliseconds since a moment of the clock

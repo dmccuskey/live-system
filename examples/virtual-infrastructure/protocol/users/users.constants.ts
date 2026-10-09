@@ -24,6 +24,9 @@ export const FRUSTRATION_ABORTED = 0.15
 /** What a completed command multiplies the frustration by: relief. */
 export const FRUSTRATION_RELIEF = 0.9
 
+/** How far back a user's `served` looks, in milliseconds. */
+export const SERVED_WINDOW = 30_000
+
 /** The names new users are given, in order. */
 export const USER_NAMES = [
     'Alice',

@@ -30,6 +30,15 @@ const isOver = computed(
                 <span data-test="queue-capacity">{{ record.waitingForRoom }}</span>
             </dd>
         </div>
+        <div>
+            <dt>Commands a minute</dt>
+            <dd>
+                <span class="reason">Completed:</span>
+                <span data-test="throughput">{{ record.throughput }}</span
+                ><span class="reason">, Requested:</span>
+                <span data-test="requested">{{ record.requested }}</span>
+            </dd>
+        </div>
     </dl>
 </template>
 

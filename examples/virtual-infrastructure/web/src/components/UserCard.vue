@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// One user: its fixed profile and its frustration.
+// One user: its fixed profile, how well it is served, and its frustration.
 import { createRemoveUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { useWebApp } from '../composables/web-app.ts'
-import { mood, percent } from '../format.ts'
+import { mood, percent, service } from '../format.ts'
 
 const props = defineProps<{ user: UserRecord }>()
 
@@ -13,7 +13,10 @@ const { commands } = useWebApp()
 <template>
     <article class="card" data-test="user">
         <div class="card__header">
-            <strong>{{ user.name }}</strong>
+            <span>
+                <strong>{{ user.name }}</strong>
+                <span class="rate muted" data-test="rate">{{ user.commandsPerMinute }}/min</span>
+            </span>
             <button
                 type="button"
                 :aria-label="`Remove ${user.name}`"
@@ -26,7 +29,17 @@ const { commands } = useWebApp()
 
         <dl class="profile">
             <dt>Activity</dt>
-            <dd data-test="activity">{{ user.commandsPerMinute }} commands/min</dd>
+            <dd class="meter" :title="`${percent(user.served)} of its commands of late were served`">
+                <div class="bar">
+                    <div
+                        class="bar__fill"
+                        :class="`bar__fill--${service(user.served)}`"
+                        :style="{ width: percent(user.served) }"
+                        data-test="served-bar"
+                    />
+                </div>
+                <span data-test="served">{{ percent(user.served) }}</span>
+            </dd>
             <dt class="visually-hidden">Command mix</dt>
             <dd class="mix" data-test="mix">
                 <span><span class="muted">Se</span> {{ percent(user.commandMix.search) }}</span>
@@ -38,12 +51,13 @@ const { commands } = useWebApp()
                 </span>
             </dd>
             <dt>Frustration</dt>
-            <dd class="frustration">
+            <dd class="meter">
                 <div class="bar">
                     <div
                         class="bar__fill"
                         :class="`bar__fill--${mood(user.frustration)}`"
                         :style="{ width: percent(user.frustration) }"
+                        data-test="frustration-bar"
                     />
                 </div>
                 <span data-test="frustration">{{ percent(user.frustration) }}</span>
@@ -98,18 +112,23 @@ dd {
     display: block;
 }
 
-/* The bar beside its value: alone at the foot of the card it reads as a scrollbar */
-.frustration {
+.rate {
+    margin-left: 0.35rem;
+    font-size: 0.85rem;
+}
+
+/* A bar beside its value: alone at the foot of the card it reads as a scrollbar */
+.meter {
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
 
-.frustration .bar {
+.meter .bar {
     flex: 1;
 }
 
-.frustration span {
+.meter span {
     min-width: 2.5rem;
 }
 

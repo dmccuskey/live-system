@@ -149,6 +149,26 @@ describe('SystemStatus', () => {
         wrapper.unmount()
     })
 
+    test('shows the commands completed in the last minute beside those requested', async () => {
+        const { pinia, global } = createTestApp()
+        const store = useManagerStore(pinia)
+
+        store.load([managerRecord({ throughput: 31, requested: 35 })])
+
+        const wrapper = mount(SystemStatus, { global })
+
+        expect(text(wrapper, 'throughput')).toBe('31')
+        expect(text(wrapper, 'requested')).toBe('35')
+
+        store.set(managerRecord({ throughput: 33, requested: 34 }))
+        await nextTick()
+
+        expect(text(wrapper, 'throughput')).toBe('33')
+        expect(text(wrapper, 'requested')).toBe('34')
+
+        wrapper.unmount()
+    })
+
     test('follows the queue at once', async () => {
         const { pinia, global } = createTestApp()
         const store = useManagerStore(pinia)

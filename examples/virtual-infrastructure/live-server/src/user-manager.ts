@@ -30,6 +30,7 @@ export class UserManager extends LiveObjectManager<UserRecord, VirtualUser, Demo
             name: this.#nextName(),
             ...createProfile(this.context.random),
             frustration: 0,
+            served: 1,
         })
 
         return { id }

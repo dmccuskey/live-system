@@ -40,6 +40,9 @@ export const SCALING_SAMPLE_INTERVAL = 1_000
  */
 export const UTILIZATION_WINDOW = 10_000
 
+/** How far back the throughput looks, in milliseconds: the commands completed, and those requested, in the last minute. */
+export const THROUGHPUT_WINDOW = 60_000
+
 /** How long after a decision the next server may be added, in milliseconds. */
 export const SCALE_UP_WAIT = 5_000
 

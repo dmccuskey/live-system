@@ -16,6 +16,7 @@ const user = (id: string, name: string): UserRecord => ({
     commandsPerMinute: 20,
     commandMix: { search: 0.7, standard: 0.2, agentic: 0.1 },
     frustration: 0,
+    served: 1,
 })
 
 let systems: LiveSystem<DemoContext>[] = []
@@ -48,7 +49,7 @@ describe('the users', () => {
         const records = await source.find()
 
         expect(records).toHaveLength(1)
-        expect(records[0]).toMatchObject({ name: 'Alice', frustration: 0 })
+        expect(records[0]).toMatchObject({ name: 'Alice', frustration: 0, served: 1 })
         expect(manager.objects.size).toBe(1)
     })
 
