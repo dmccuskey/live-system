@@ -33,8 +33,11 @@ live-system/
 │       ├── protocol/             # records, routes and commands, by domain
 │       ├── data-service/         # Feathers with SQLite
 │       ├── live-server/          # managers and live objects
-│       └── web/                  # the web app, in Vue 3
+│       ├── web/                  # the web app, in Vue 3
+│       └── compose.yaml          # the demo as three containers
 ├── node_modules/                 # installed by `bun install` (gitignored)
+├── .github/workflows/            # publishes the demo's images on a tag
+├── .dockerignore                 # what the demo's images leave out
 ├── .prettierrc                   # the code style, for Prettier
 ├── bun.lock
 ├── bunfig.toml                   # preloads what `bun test` needs for `.vue` files
