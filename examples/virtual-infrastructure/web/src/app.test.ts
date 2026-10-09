@@ -58,6 +58,7 @@ const createUsers = async (dataServiceUrl: string, ...names: string[]) => {
             commandsPerMinute: 0,
             commandMix: { search: 1, standard: 0, agentic: 0 },
             frustration: 0,
+            served: 1,
         })
     }
 

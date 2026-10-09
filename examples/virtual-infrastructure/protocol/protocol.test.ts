@@ -53,6 +53,7 @@ test('records are identified by id', () => {
         commandsPerMinute: 8,
         commandMix: { search: 0.7, standard: 0.2, agentic: 0.1 },
         frustration: 0,
+        served: 1,
     }
     const server: ServerRecord = {
         id: 's1',
@@ -138,6 +139,8 @@ test('a manager record is keyed by the manager it belongs to, and holds what is 
         queueLength: 0,
         waitingForRoom: 0,
         utilization: 0,
+        throughput: 0,
+        requested: 0,
     })
 })
 

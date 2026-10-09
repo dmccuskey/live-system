@@ -15,6 +15,7 @@ const alice: Omit<UserRecord, 'id'> = {
     commandsPerMinute: 8,
     commandMix: { search: 0.7, standard: 0.2, agentic: 0.1 },
     frustration: 0,
+    served: 1,
 }
 const server1: Omit<ServerRecord, 'id'> = {
     name: 'Server 1',
@@ -115,6 +116,8 @@ describe('records', () => {
             queueLength: 2,
             waitingForRoom: 0,
             utilization: 0.4,
+            throughput: 0,
+            requested: 0,
         }
 
         await managers.create(record)

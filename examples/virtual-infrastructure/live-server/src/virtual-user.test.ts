@@ -5,6 +5,7 @@ import {
     FRUSTRATION_PER_SECOND_QUEUED,
     FRUSTRATION_REFUSED,
     FRUSTRATION_RELIEF,
+    SERVED_WINDOW,
 } from '@virtual-infrastructure/protocol/users/users.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { MemoryRecordSource } from 'live-system/core'
@@ -19,6 +20,7 @@ const record: UserRecord = {
     commandsPerMinute: 20,
     commandMix: { search: 0.2, standard: 0.5, agentic: 0.3 },
     frustration: 0,
+    served: 1,
 }
 
 /** A record source that keeps what it was asked to patch. */
@@ -360,5 +362,132 @@ describe('frustration', () => {
 
         expect(user.frustration).toBeCloseTo(FRUSTRATION_REFUSED)
         expect(source.patches).toEqual([])
+    })
+})
+
+describe('what is served', () => {
+    const complete = (context: ReturnType<typeof create>['context'], commandId: string) =>
+        context.events.emit('commandFinished', { ...command(commandId), serverId: 's1', outcome: 'completed' })
+    const refuse = (context: ReturnType<typeof create>['context'], commandId: string) =>
+        context.events.emit('commandRefused', { ...command(commandId), reason: 'queue_full' })
+
+    test('with no command come to an end, all is served', async () => {
+        const { user } = await listening()
+
+        expect(user.served).toBe(1)
+    })
+
+    test('it is the share of the commands that completed', async () => {
+        const { user, context } = await listening()
+
+        complete(context, 'c1')
+        complete(context, 'c2')
+        complete(context, 'c3')
+        refuse(context, 'c4')
+
+        expect(user.served).toBe(0.75)
+    })
+
+    test('an aborted command counts against it', async () => {
+        const { user, context } = await listening()
+
+        complete(context, 'c1')
+        context.events.emit('commandFinished', { ...command('c2'), serverId: 's1', outcome: 'aborted' })
+
+        expect(user.served).toBe(0.5)
+    })
+
+    test('a dropped command does not count', async () => {
+        const { user, context } = await listening()
+
+        complete(context, 'c1')
+        context.events.emit('commandRefused', { ...command('c2'), reason: 'dropped' })
+
+        expect(user.served).toBe(1)
+    })
+
+    test('a command that waited and then completed is served', async () => {
+        const { user, context, clock } = await listening()
+
+        context.events.emit('commandQueued', command('c1'))
+        await clock.advance(5_000)
+        context.events.emit('commandStarted', { ...command('c1'), serverId: 's1' })
+        complete(context, 'c1')
+
+        expect(user.served).toBe(1)
+    })
+
+    test('it is in whole percent', async () => {
+        const { user, context } = await listening()
+
+        complete(context, 'c1')
+        complete(context, 'c2')
+        refuse(context, 'c3')
+
+        expect(user.served).toBe(0.67)
+    })
+
+    test('an outcome leaves it once it is older than the window, with no further event', async () => {
+        const { user, context, clock } = await listening()
+
+        refuse(context, 'c1')
+        await clock.advance(SERVED_WINDOW / 2)
+        complete(context, 'c2')
+
+        expect(user.served).toBe(0.5)
+
+        await clock.advance(SERVED_WINDOW / 2)
+
+        expect(user.served).toBe(1)
+    })
+
+    test('it is written to the record when it changes, and not when it does not', async () => {
+        const { context, source, clock } = await listening()
+
+        complete(context, 'c1')
+        await clock.advance(1_000)
+
+        expect(source.patches).toEqual([])
+
+        refuse(context, 'c2')
+        await clock.advance(1_000)
+
+        expect(source.patches.map(patch => patch.served)).toEqual([0.5])
+    })
+
+    test('the write that follows the window is made too', async () => {
+        const { context, source, clock } = await listening()
+
+        refuse(context, 'c1')
+        await clock.advance(SERVED_WINDOW + 1_000)
+
+        expect(source.patches.map(patch => patch.served)).toEqual([0, 1])
+    })
+
+    test("another user's commands do not count", async () => {
+        const { user, context } = await listening()
+
+        context.events.emit('commandRefused', { ...command('c1', 'search', 'u2'), reason: 'queue_full' })
+
+        expect(user.served).toBe(1)
+    })
+
+    test('init() clears what an earlier run left', async () => {
+        const { user, source } = create({ commandsPerMinute: 0, served: 0.4 })
+
+        await user.init()
+
+        expect(source.patches).toEqual([{ served: 1 }])
+    })
+
+    test('a destroyed user holds no timer for it', async () => {
+        const { user, context, source, clock } = await listening()
+
+        refuse(context, 'c1')
+        await clock.advance(1_000)
+        user.destroy()
+        await clock.advance(SERVED_WINDOW)
+
+        expect(source.patches.map(patch => patch.served)).toEqual([0])
     })
 })

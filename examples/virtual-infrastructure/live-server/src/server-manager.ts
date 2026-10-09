@@ -19,6 +19,7 @@ import {
     MIN_SERVERS,
     SCALING_SAMPLE_INTERVAL,
     SERVER_CAPACITY,
+    THROUGHPUT_WINDOW,
 } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVER_ROUTES } from '@virtual-infrastructure/protocol/servers/servers.routes'
@@ -35,6 +36,7 @@ import type {
 } from 'live-system/core'
 import { watch } from 'vue'
 import type { DemoContext } from './context.ts'
+import { RecentWindow } from './recent-window.ts'
 import { ScalingPolicy, type ScalingDecider } from './scaling-policy.ts'
 import { useManagerStore } from './stores.ts'
 import { VirtualServer } from './virtual-server.ts'
@@ -70,8 +72,8 @@ const serverNumber = (name: string | undefined): number => Number(/(\d+)$/.exec(
  * The manager has a record of its own among the manager records, with its
  * key, and is the only one to write it. The record holds what the Demo User
  * has set, changed through the managers' route with its key, and what the manager reports of the
- * servers as a whole for the UI to show: the queue's length and the
- * utilization, changes close together as one write. `init()` creates the
+ * servers as a whole for the UI to show: the queue's length, the
+ * utilization, the throughput and what was requested, changes close together as one write. `init()` creates the
  * record when there is none. A setting takes effect when it comes back in the
  * manager store, which the manager watches for its record. What it reports
  * it does not read back. Should the record go missing from the store, the
@@ -89,6 +91,11 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     #settings: ServerManagerSettings = DEFAULTS
     // The utilization as it was last reported
     #reportedUtilization = 0
+    // The commands completed and the commands requested of late, and their numbers as last reported
+    #completed = new RecentWindow<true>(THROUGHPUT_WINDOW)
+    #requested = new RecentWindow<true>(THROUGHPUT_WINDOW)
+    #reportedThroughput = 0
+    #reportedRequested = 0
     #managerSource: RecordSource<ManagerRecord>
     // The ID of the manager's own record, and the writes of what it reports. Set by init().
     #recordId: string | undefined
@@ -138,16 +145,19 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     override async init(): Promise<void> {
         await super.init()
 
-        const { queueLength, waitingForRoom, utilization } = DEFAULTS
+        const { queueLength, waitingForRoom, utilization, throughput, requested } = DEFAULTS
         const record = (await this.#managerSource.find()).find(candidate => candidate.key === MANAGER_KEYS.servers)
         const { id } = record ?? (await this.#managerSource.create({ ...DEFAULTS }))
         const isStale =
             record &&
             (record.queueLength !== queueLength ||
                 record.waitingForRoom !== waitingForRoom ||
-                record.utilization !== utilization)
+                record.utilization !== utilization ||
+                record.throughput !== throughput ||
+                record.requested !== requested)
 
-        if (isStale) await this.#managerSource.patch(id, { queueLength, waitingForRoom, utilization })
+        if (isStale)
+            await this.#managerSource.patch(id, { queueLength, waitingForRoom, utilization, throughput, requested })
 
         this.#recordId = id
         this.#write = debouncePatch<ManagerRecord>(data => this.#managerSource.patch(id, data), WRITE_DELAY, {
@@ -187,7 +197,7 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         if (this.objects.size === 0) await this.#createServer()
     }
 
-    /** Begins to sample the load, for the utilization to show and for automatic mode to act on. */
+    /** Begins to sample the load, for the utilization and the throughput to show and for automatic mode to act on. */
     override async run(): Promise<void> {
         await super.run()
 
@@ -289,6 +299,8 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
 
     // A command joins the back of the queue, unless its user has one waiting already
     #request(event: CommandRequestedEvent): void {
+        this.#requested.add(this.context.clock.now(), true)
+
         const waiting = this.#queue.filter(queued => queued.userId === event.userId).length
 
         if (waiting >= MAX_QUEUED_PER_USER) {
@@ -303,7 +315,9 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
     }
 
     // One of the user's commands has left its server: that is room on the server, and for the user
-    #finished({ userId, serverId }: CommandFinishedEvent): void {
+    #finished({ userId, serverId, outcome }: CommandFinishedEvent): void {
+        if (outcome === 'completed') this.#completed.add(this.context.clock.now(), true)
+
         const running = (this.#running.get(userId) ?? 0) - 1
 
         if (running > 0) {
@@ -414,6 +428,19 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         this.#write?.patch({ utilization })
     }
 
+    // Reports how many commands were completed and how many were requested of late, when either has changed
+    #reportThroughput(): void {
+        const now = this.context.clock.now()
+        const throughput = this.#completed.values(now).length
+        const requested = this.#requested.values(now).length
+
+        if (throughput === this.#reportedThroughput && requested === this.#reportedRequested) return
+
+        this.#reportedThroughput = throughput
+        this.#reportedRequested = requested
+        this.#write?.patch({ throughput, requested })
+    }
+
     // The servers that take commands: not draining, and not being removed
     #available(): VirtualServer[] {
         return [...this.objects.values()].filter(
@@ -478,6 +505,7 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
         })
 
         this.#reportUtilization()
+        this.#reportThroughput()
 
         if (this.#settings.scalingMode !== 'automatic') return
 

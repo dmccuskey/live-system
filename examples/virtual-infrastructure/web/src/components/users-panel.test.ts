@@ -64,13 +64,14 @@ describe('UsersPanel', () => {
 })
 
 describe('UserCard', () => {
-    test('shows the profile and the frustration', () => {
+    test('shows the profile, what is served and the frustration', () => {
         const { global } = createTestApp()
         const wrapper = mount(UserCard, { props: { user: userRecord() }, global })
         const values = wrapper.findAll('dd:not(.mix)').map(value => value.text())
 
         expect(wrapper.get('strong').text()).toBe('Alice')
-        expect(values).toEqual(['8 commands/min', '14%'])
+        expect(wrapper.get('[data-test="rate"]').text()).toBe('8/min')
+        expect(values).toEqual(['100%', '14%'])
         expect(wrapper.findAll('[data-test="mix"] > span:not(.mix__tip)').map(part => part.text())).toEqual([
             'Se 70%',
             'St 20%',
@@ -87,19 +88,35 @@ describe('UserCard', () => {
     ])('a frustration of %p has a %s bar of %s', (frustration, level, width) => {
         const { global } = createTestApp()
         const wrapper = mount(UserCard, { props: { user: userRecord({ frustration }) }, global })
-        const fill = wrapper.get('.bar__fill')
+        const fill = wrapper.get('[data-test="frustration-bar"]')
 
         expect(fill.classes()).toContain(`bar__fill--${level}`)
         expect(fill.attributes('style')).toContain(`width: ${width}`)
+    })
+
+    test.each([
+        [1, 'calm', '100%'],
+        [0.8, 'uneasy', '80%'],
+        [0.6, 'annoyed', '60%'],
+        [0.2, 'angry', '20%'],
+    ])('with %p served the bar is %s and %s wide', (served, level, width) => {
+        const { global } = createTestApp()
+        const wrapper = mount(UserCard, { props: { user: userRecord({ served }) }, global })
+        const fill = wrapper.get('[data-test="served-bar"]')
+
+        expect(fill.classes()).toContain(`bar__fill--${level}`)
+        expect(fill.attributes('style')).toContain(`width: ${width}`)
+        expect(wrapper.get('[data-test="served"]').text()).toBe(width)
     })
 
     test('follows its record', async () => {
         const { global } = createTestApp()
         const wrapper = mount(UserCard, { props: { user: userRecord() }, global })
 
-        await wrapper.setProps({ user: userRecord({ frustration: 0.6 }) })
+        await wrapper.setProps({ user: userRecord({ frustration: 0.6, served: 0.5 }) })
 
         expect(wrapper.get('[data-test="frustration"]').text()).toBe('60%')
+        expect(wrapper.get('[data-test="served"]').text()).toBe('50%')
     })
 
     test('the remove control sends the remove command for this user', async () => {

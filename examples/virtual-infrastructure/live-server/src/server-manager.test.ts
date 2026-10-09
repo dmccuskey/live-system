@@ -7,7 +7,12 @@ import {
     createRemoveServerCommand,
 } from '@virtual-infrastructure/protocol/servers/servers.commands'
 import type { AddServerResult } from '@virtual-infrastructure/protocol/servers/servers.commands'
-import { MAX_SERVERS, type CommandType } from '@virtual-infrastructure/protocol/servers/servers.constants'
+import {
+    MAX_SERVERS,
+    SCALING_SAMPLE_INTERVAL,
+    THROUGHPUT_WINDOW,
+    type CommandType,
+} from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { defineRecordStore, MemoryRecordSource } from 'live-system/core'
 import type { CommandResponse, FakeClock, LiveSystem } from 'live-system/core'
@@ -634,6 +639,70 @@ describe('the utilization', () => {
         await settle()
 
         expect(written.map(reported)).toEqual([{ queueLength: 1, waitingForRoom: 1, utilization: 0.9 }])
+    })
+})
+
+describe('the throughput', () => {
+    // Each value the throughput was written as, in order, without the writes that left it as it was
+    const throughputs = (written: ManagerRecord[]) =>
+        written.map(record => record.throughput).filter((value, index, values) => value !== values[index - 1])
+
+    test('it is how many commands completed in the last minute, written after a sample', async () => {
+        const { request, clock, written, context } = await boot([server('s1')], stubPolicy().policy)
+        const finished = finishedEvents(context)
+
+        request('search', 'u1')
+        request('search', 'u2')
+        await advanceUntil(clock, () => finished.length === 2)
+        await clock.advance(SCALING_SAMPLE_INTERVAL + 100)
+
+        expect(written.at(-1)?.throughput).toBe(2)
+    })
+
+    test('a command leaves it a minute after it completed', async () => {
+        const { request, clock, written, context } = await boot([server('s1')], stubPolicy().policy)
+        const finished = finishedEvents(context)
+
+        request('search')
+        await advanceUntil(clock, () => finished.length === 1)
+        await clock.advance(THROUGHPUT_WINDOW + SCALING_SAMPLE_INTERVAL + 100)
+
+        // The first write is of the request, with nothing completed yet
+        expect(throughputs(written)).toEqual([0, 1, 0])
+    })
+
+    test('an aborted command is not counted', async () => {
+        const { request, clock, written, source, context } = await boot([server('s1')], stubPolicy().policy)
+        const finished = finishedEvents(context)
+
+        request('agentic')
+        await source.remove('s1')
+        await clock.advance(SCALING_SAMPLE_INTERVAL * 3)
+
+        expect(finished).toMatchObject([{ outcome: 'aborted' }])
+        expect(throughputs(written)).not.toContain(1)
+    })
+
+    test('what was requested is counted beside it, the refused commands too', async () => {
+        const { request, clock, written, refused } = await boot([server('s1')], stubPolicy().policy)
+
+        // Three run, one waits, the fifth is refused
+        for (let number = 0; number < 5; number++) request('search')
+        await clock.advance(SCALING_SAMPLE_INTERVAL + 100)
+
+        expect(refused).toHaveLength(1)
+        expect(written.at(-1)?.requested).toBe(5)
+
+        // The command that waited completes a few seconds after the others
+        await clock.advance(THROUGHPUT_WINDOW + SCALING_SAMPLE_INTERVAL * 10)
+
+        expect(written.at(-1)).toMatchObject({ requested: 0, throughput: 0 })
+    })
+
+    test('what an earlier run left in the record is cleared', async () => {
+        const { managers } = await boot([server('s1')], undefined, [{ ...own, throughput: 40, requested: 44 }])
+
+        expect(await managers.find()).toEqual([own])
     })
 })
 

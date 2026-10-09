@@ -66,6 +66,7 @@ export function userRecord(overrides: Partial<UserRecord> = {}): UserRecord {
         commandsPerMinute: 8,
         commandMix: { search: 0.7, standard: 0.2, agentic: 0.1 },
         frustration: 0.14,
+        served: 1,
         ...overrides,
     }
 }

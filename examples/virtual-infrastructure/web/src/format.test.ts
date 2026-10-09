@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { level, mood, percent } from './format.ts'
+import { level, mood, percent, service } from './format.ts'
 
 test.each([
     [0, '0%'],
@@ -32,4 +32,17 @@ test.each([
     [1, 'angry'],
 ] as const)('mood(%p) is %p', (frustration, expected) => {
     expect(mood(frustration)).toBe(expected)
+})
+
+test.each([
+    [1, 'calm'],
+    [0.9, 'calm'],
+    [0.89, 'uneasy'],
+    [0.75, 'uneasy'],
+    [0.74, 'annoyed'],
+    [0.5, 'annoyed'],
+    [0.49, 'angry'],
+    [0, 'angry'],
+] as const)('service(%p) is %p', (served, expected) => {
+    expect(service(served)).toBe(expected)
 })

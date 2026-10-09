@@ -115,6 +115,7 @@ describe('a first start', () => {
             commandsPerMinute: 0,
             commandMix: { search: 1, standard: 0, agentic: 0 },
             frustration: 0,
+            served: 1,
         })
         const stale = await servers.create({
             name: 'Server 4',
@@ -141,6 +142,7 @@ describe('commands', () => {
             commandsPerMinute: 0,
             commandMix: { search: 1, standard: 0, agentic: 0 },
             frustration: 0,
+            served: 1,
         })
 
         return sources
@@ -245,6 +247,7 @@ describe("the server manager's record, and scaling", () => {
         commandsPerMinute: 0,
         commandMix: { search: 1, standard: 0, agentic: 0 },
         frustration: 0,
+        served: 1,
     }
 
     test("a first start creates the server manager's record", async () => {
@@ -266,6 +269,8 @@ describe("the server manager's record, and scaling", () => {
                 queueLength: 0,
                 waitingForRoom: 0,
                 utilization: 0,
+                throughput: 0,
+                requested: 0,
             },
         ])
     })
@@ -389,6 +394,7 @@ describe('the time scale', () => {
             commandsPerMinute: 0,
             commandMix: { search: 1, standard: 0, agentic: 0 },
             frustration: 0,
+            served: 1,
         })
         const clock = new FakeClock()
         const liveServer = createLiveServer({ dataServiceUrl: url, port: 0, clock, timeScale: 0.01 })
@@ -436,6 +442,7 @@ describe('a data service that is restarted', () => {
                 commandsPerMinute: 60,
                 commandMix: { search: 1, standard: 0, agentic: 0 },
                 frustration: 0,
+                served: 1,
             })
 
             await aside.dataService.stop()

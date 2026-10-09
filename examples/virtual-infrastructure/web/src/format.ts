@@ -16,6 +16,18 @@ export function mood(frustration: number): Mood {
     return 'angry'
 }
 
+/**
+ * How well a user is served, for the color of its bar: green while nearly all of its commands
+ * complete, then yellow, orange and red as fewer do. The moods' colors, the other way around.
+ */
+export function service(served: number): Mood {
+    if (served >= 0.9) return 'calm'
+    if (served >= 0.75) return 'uneasy'
+    if (served >= 0.5) return 'annoyed'
+
+    return 'angry'
+}
+
 export type Level = 'low' | 'medium' | 'high'
 
 /** Which third of 0 to 1 a fraction is in, for the color of a bar. */

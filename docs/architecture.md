@@ -532,6 +532,8 @@ const DEFAULT_MANAGER_RECORDS: { [K in keyof ManagerRecords]: Omit<ManagerRecord
         queueLength: 0,
         waitingForRoom: 0,
         utilization: 0,
+        throughput: 0,
+        requested: 0,
     },
 }
 ```
@@ -566,7 +568,7 @@ Examples include:
 - workflows
 - sessions
 
-A record holds the object's state, including the state that changes as the system runs. In the [demo](architecture-demo.md), a user's record holds how it behaves, which is fixed, and how frustrated it is, which changes:
+A record holds the object's state, including the state that changes as the system runs. In the [demo](architecture-demo.md), a user's record holds how it behaves, which is fixed, and how frustrated and how well served it is, which change:
 
 ```ts
 interface UserRecord {
@@ -575,6 +577,7 @@ interface UserRecord {
     commandsPerMinute: number
     commandMix: CommandMix
     frustration: number
+    served: number
 }
 ```
 

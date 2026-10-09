@@ -28,6 +28,13 @@ export interface ServerManagerRecord {
      * over the capacity of the servers that take commands. With no such server, 1.
      */
     utilization: number
+    /** How many commands the servers completed within `THROUGHPUT_WINDOW`: commands a minute. */
+    throughput: number
+    /**
+     * How many commands the users asked for within `THROUGHPUT_WINDOW`, the refused ones too:
+     * what the throughput is held against.
+     */
+    requested: number
 }
 
 /** What the Demo User may set for the `ServerManager`: the rest of its record is the manager's to report. */
