@@ -6,10 +6,12 @@ import { CommandClient, WebStartup } from 'live-system/web'
 import type { Fetch, SystemStatus } from 'live-system/web'
 import { createPinia } from 'pinia'
 import type { Pinia } from 'pinia'
-import { readonly, ref } from 'vue'
+import { readonly, ref, shallowReadonly, shallowRef } from 'vue'
 import type { InjectionKey, Ref } from 'vue'
 import { createCommandSender } from './command-sender.ts'
 import type { CommandSender } from './command-sender.ts'
+import { emptyWebConfig, loadWebConfig } from './config.ts'
+import type { WebConfig } from './config.ts'
 import type { WebContext } from './context.ts'
 import { ManagerRecords, ServerManager, UserManager } from './managers.ts'
 import { useManagerStore, useServerStore, useUserStore } from './stores.ts'
@@ -19,7 +21,9 @@ export interface WebAppOptions {
     dataServiceUrl: string
     /** Where commands are posted: the live server's `CommandServer`, or a proxy to it. */
     commandUrl: string
-    /** The `fetch` to send commands with. The global one unless given. */
+    /** Where the run-time configuration is read from, for example `/config.json`. Not read unless given. */
+    configUrl?: string
+    /** The `fetch` to send commands and read the configuration with. The global one unless given. */
     fetch?: Fetch
 }
 
@@ -32,6 +36,8 @@ export interface WebApp {
     /** Whether the data service is connected, after startup as well. */
     readonly isConnected: Readonly<Ref<boolean>>
     readonly commands: CommandSender
+    /** The run-time configuration: empty until it has been read, and when there is none. */
+    readonly config: Readonly<Ref<WebConfig>>
     /** Connects and loads the stores. A failure is reported in `status`. */
     start(): Promise<void>
     stop(): Promise<void>
@@ -44,6 +50,8 @@ export function createWebApp(options: WebAppOptions): WebApp {
     const connection = new FeathersConnection({ url: options.dataServiceUrl })
     const pinia = createPinia()
     const isConnected = ref(false)
+    // Replaced whole when read, never changed in place
+    const config = shallowRef<WebConfig>(emptyWebConfig())
 
     const subscriptions = [
         connection.onConnected(() => (isConnected.value = true)),
@@ -73,8 +81,16 @@ export function createWebApp(options: WebAppOptions): WebApp {
         status: startup.status,
         isConnected: readonly(isConnected),
         commands,
+        config: shallowReadonly(config),
 
-        start: () => startup.start(),
+        start() {
+            // Beside the startup, which does not wait for it: the page works without
+            if (options.configUrl) {
+                void loadWebConfig(options.configUrl, options.fetch).then(loaded => (config.value = loaded))
+            }
+
+            return startup.start()
+        },
 
         async stop() {
             commands.dismiss()

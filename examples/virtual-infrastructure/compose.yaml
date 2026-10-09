@@ -55,6 +55,16 @@ services:
         environment:
             # The origin of a page elsewhere that may read /health. Unset: none
             HEALTH_ALLOW_ORIGIN: ${HEALTH_ALLOW_ORIGIN:-}
+            # The links of the web app's "About" dialog: what each says and where it leads, in
+            # pairs numbered 1 to 4. A pair that is unset, or half set, gives no link
+            ABOUT_LINK_1_LABEL: ${ABOUT_LINK_1_LABEL:-}
+            ABOUT_LINK_1_URL: ${ABOUT_LINK_1_URL:-}
+            ABOUT_LINK_2_LABEL: ${ABOUT_LINK_2_LABEL:-}
+            ABOUT_LINK_2_URL: ${ABOUT_LINK_2_URL:-}
+            ABOUT_LINK_3_LABEL: ${ABOUT_LINK_3_LABEL:-}
+            ABOUT_LINK_3_URL: ${ABOUT_LINK_3_URL:-}
+            ABOUT_LINK_4_LABEL: ${ABOUT_LINK_4_LABEL:-}
+            ABOUT_LINK_4_URL: ${ABOUT_LINK_4_URL:-}
         ports:
             - ${WEB_PORT:-3032}:3032
         depends_on:
