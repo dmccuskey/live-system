@@ -15,8 +15,15 @@ export type NewRecord<T extends HasId> = Omit<T, 'id'> & { id?: string }
 
 type BackendRecord = Record<string, unknown>
 
+/** One page of a paginated service. `total` is missing when the service does not count. */
+interface Page {
+    data: BackendRecord[]
+    total?: number
+    limit?: number
+}
+
 /** What `find` may return: a page, an array or a single record. */
-type FindResult = BackendRecord | BackendRecord[] | { data?: BackendRecord[] }
+type FindResult = BackendRecord | BackendRecord[] | Page
 
 type ChangeEvent = 'created' | 'updated' | 'patched' | 'removed'
 
@@ -38,7 +45,11 @@ export interface FeathersServiceLike {
 export interface FeathersRecordSourceOptions {
     /** The backend's name for the record ID, when it is not `id` (for example `_id`). */
     idField?: string
-    /** A fixed query for `find`, when the source covers only a part of the service's records. */
+    /**
+     * A fixed query for `find`, when the source covers only a part of the
+     * service's records. With a `$limit` of its own, `find` returns that one
+     * page and reads no further.
+     */
     query?: Record<string, unknown>
     /**
      * How the source hears that the connection was made again after a lost
@@ -67,11 +78,35 @@ export class FeathersRecordSource<T extends HasId> {
         this.#onReconnected = options.onReconnected
     }
 
-    /** Every record, as an array, whether the service returns a page, an array or a single record. */
+    /**
+     * Every record, as an array, whether the service returns pages, an array
+     * or a single record. From a paginated service it reads page after page.
+     */
     async find(): Promise<T[]> {
-        const result = (await this.#service.find(this.#query ? { query: this.#query } : undefined)) as FindResult
+        const first = (await this.#service.find(this.#query ? { query: this.#query } : undefined)) as FindResult
 
-        return toArray(result).map(record => this.#toRecord(record))
+        if (!isPage(first)) return toArray(first).map(record => this.#toRecord(record))
+
+        const records = [...first.data]
+
+        // A query with a $limit of its own asks for that many: its one page is the answer
+        if (this.#query?.$limit === undefined) {
+            const start = Number(this.#query?.$skip ?? 0)
+            let page = first
+
+            while (hasMore(page, start + records.length)) {
+                const next = (await this.#service.find({
+                    query: { ...this.#query, $skip: start + records.length },
+                })) as FindResult
+
+                if (!isPage(next)) break
+
+                page = next
+                records.push(...page.data)
+            }
+        }
+
+        return records.map(record => this.#toRecord(record))
     }
 
     /** One record. Rejects when it does not exist. */
@@ -152,9 +187,22 @@ export class FeathersRecordSource<T extends HasId> {
     }
 }
 
-function toArray(result: FindResult): BackendRecord[] {
-    if (Array.isArray(result)) return result
-    if ('data' in result && Array.isArray(result.data)) return result.data
+function isPage(result: FindResult): result is Page {
+    return !Array.isArray(result) && 'data' in result && Array.isArray(result.data)
+}
 
-    return [result as BackendRecord]
+/**
+ * Whether records follow a page, `read` being how far into the service's
+ * records the pages so far reach. An empty page always ends the reading.
+ */
+function hasMore(page: Page, read: number): boolean {
+    if (page.data.length === 0) return false
+    if (typeof page.total === 'number') return read < page.total
+
+    // Without a count, a full page may have another behind it
+    return typeof page.limit === 'number' && page.data.length >= page.limit
+}
+
+function toArray(result: BackendRecord | BackendRecord[]): BackendRecord[] {
+    return Array.isArray(result) ? result : [result]
 }
