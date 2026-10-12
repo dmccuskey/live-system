@@ -216,6 +216,8 @@ The data service is a Feathers app in a process of its own, with a service per k
 
 It keeps the records in a SQLite file, one table per service, each record stored whole as JSON beside its ID. A record therefore gains a field without a change to the table. A record created without an `id` is given a UUID.
 
+To a client its services are ordinary Feathers database services. The service class is built on Feathers' adapter base, as Feathers' own memory adapter is, so a query means what it means on any of them: fields and operators to narrow by (`$in`, `$gt`, `$or`), `$limit` and `$skip`, `$sort` and `$select`. A query parameter it does not know is refused with a `BadRequest`. `find` answers a page, with the number of records as its `total`. A page holds up to 1000 records, which is every record of a kind in this demo, so the demo's own clients, which read them all, get them in one call. The query is applied in memory, after every row has been read: enough for a demo's tables, and not how a large table should be served.
+
 The record types are in the demo's protocol:
 
 ```ts
