@@ -65,6 +65,14 @@ const refuseOutsideWrite = async (context: HookContext) => {
     }
 }
 
+/**
+ * Every service answers in pages, as a Feathers service usually does, so a
+ * client can ask for a part of the records and for their number. A page is
+ * large enough to hold all of a demo's records of one kind: its own clients,
+ * which read every record, get them in one call.
+ */
+const PAGINATION = { default: 1000, max: 1000 }
+
 /** Socket.IO's own path: its requests are answered by Socket.IO, on the same HTTP server. */
 const SOCKET_PATH = '/socket.io/'
 const HEALTH_PATH = '/health'
@@ -117,9 +125,12 @@ export function createDataService(options: DataServiceOptions): DataService {
                     })
                 }),
             )
-            app.use(SERVICES.users, new SqliteService<UserRecord>(db, SERVICES.users))
-            app.use(SERVICES.servers, new SqliteService<ServerRecord>(db, SERVICES.servers))
-            app.use(SERVICES.managers, new SqliteService<ManagerRecord>(db, SERVICES.managers))
+            app.use(SERVICES.users, new SqliteService<UserRecord>(db, SERVICES.users, { paginate: PAGINATION }))
+            app.use(SERVICES.servers, new SqliteService<ServerRecord>(db, SERVICES.servers, { paginate: PAGINATION }))
+            app.use(
+                SERVICES.managers,
+                new SqliteService<ManagerRecord>(db, SERVICES.managers, { paginate: PAGINATION }),
+            )
 
             for (const path of Object.values(SERVICES)) {
                 app.service(path).hooks({

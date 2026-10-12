@@ -97,6 +97,47 @@ describe('records', () => {
         expect((await servers.find()).map(server => server.id)).toEqual(['s1', 's2'])
     })
 
+    test('a Feathers client that asks for a page gets one, with the number of records', async () => {
+        const { port } = await start()
+        const connection = await connect(port)
+        const servers = connection.recordSource<ServerRecord>(SERVICES.servers)
+        const raw = connection.service(SERVICES.servers)
+
+        for (const id of ['s1', 's2', 's3']) await servers.create({ ...server1, id, name: id })
+
+        expect(await raw.find({ query: { $limit: 25 } })).toMatchObject({ total: 3, limit: 25, skip: 0 })
+        expect(await raw.find({ query: { $limit: 2, $skip: 2 } })).toMatchObject({
+            total: 3,
+            limit: 2,
+            skip: 2,
+            data: [{ id: 's3' }],
+        })
+        expect(await raw.find({ query: { $limit: 0 } })).toEqual({ total: 3, limit: 0, skip: 0, data: [] })
+        expect(await raw.find({ query: { name: { $in: ['s1', 's3'] }, $sort: { name: -1 } } })).toMatchObject({
+            total: 2,
+            data: [{ id: 's3' }, { id: 's1' }],
+        })
+    })
+
+    test('a query the service does not know is refused, not answered with nothing', async () => {
+        const { port } = await start()
+        const raw = (await connect(port)).service(SERVICES.servers)
+
+        expect(raw.find({ query: { $nope: 1 } })).rejects.toMatchObject({ name: 'BadRequest', code: 400 })
+    })
+
+    test('a record source with a query reads the records it matches', async () => {
+        const { port } = await start()
+        const connection = await connect(port)
+        const servers = connection.recordSource<ServerRecord>(SERVICES.servers)
+        const draining = connection.recordSource<ServerRecord>(SERVICES.servers, { query: { isDraining: true } })
+
+        await servers.create({ ...server1, id: 's1' })
+        await servers.create({ ...server1, id: 's2', isDraining: true })
+
+        expect((await draining.find()).map(server => server.id)).toEqual(['s2'])
+    })
+
     test('users and servers are kept apart', async () => {
         const { port } = await start()
         const connection = await connect(port)
