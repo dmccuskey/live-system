@@ -194,6 +194,128 @@ describe('find', () => {
     })
 })
 
+describe('findPage', () => {
+    test('asks for one page, and answers its records with what the service applied', async () => {
+        const { service, source } = setup()
+        service.result = { total: 5, limit: 2, skip: 2, data: [{ id: 'c' }, { id: 'd' }] }
+
+        expect(await source.findPage({ limit: 2, skip: 2 })).toEqual({
+            records: [{ id: 'c' }, { id: 'd' }] as Item[],
+            total: 5,
+            limit: 2,
+            skip: 2,
+        })
+        expect(service.calls).toEqual([['find', { query: { $limit: 2, $skip: 2 } }]])
+    })
+
+    test('starts at the first record unless told to skip', async () => {
+        const { service, source } = setup()
+        service.result = { total: 0, limit: 10, skip: 0, data: [] }
+        await source.findPage({ limit: 10 })
+
+        expect(service.calls).toEqual([['find', { query: { $limit: 10, $skip: 0 } }]])
+    })
+
+    test('reads one page only, however many records there are', async () => {
+        const { service, source } = setup()
+        service.result = { total: 500, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] }
+        await source.findPage({ limit: 2 })
+
+        expect(service.calls).toHaveLength(1)
+    })
+
+    test('answers the limit the service applied, when that is lower than the one asked for', async () => {
+        const { service, source } = setup()
+        service.result = { total: 500, limit: 50, skip: 0, data: [] }
+
+        expect(await source.findPage({ limit: 1000 })).toMatchObject({ limit: 50 })
+    })
+
+    test('counts with a limit of 0', async () => {
+        const { service, source } = setup()
+        service.result = { total: 42, limit: 0, skip: 0, data: [] }
+
+        expect(await source.findPage({ limit: 0 })).toEqual({ records: [], total: 42, limit: 0, skip: 0 })
+        expect(service.calls).toEqual([['find', { query: { $limit: 0, $skip: 0 } }]])
+    })
+
+    test("takes the call's query, `$sort` and `$select` in it", async () => {
+        const { service, source } = setup()
+        service.result = { total: 0, limit: 5, skip: 0, data: [] }
+        await source.findPage({ query: { kind: 'x', $sort: { name: -1 }, $select: ['name'] }, limit: 5 })
+
+        expect(service.calls).toEqual([
+            ['find', { query: { kind: 'x', $sort: { name: -1 }, $select: ['name'], $limit: 5, $skip: 0 } }],
+        ])
+    })
+
+    test('sets `$limit` and `$skip` itself, whatever the query says of them', async () => {
+        const { service, source } = setup()
+        service.result = { total: 0, limit: 5, skip: 0, data: [] }
+        await source.findPage({ query: { $limit: 99, $skip: 99 }, limit: 5, skip: 1 })
+
+        expect(service.calls).toEqual([['find', { query: { $limit: 5, $skip: 1 } }]])
+    })
+
+    test("merges the fixed query with the call's, which wins", async () => {
+        const { service, source } = setup({ query: { kind: 'x', color: 'red', $sort: { name: 1 } } })
+        service.result = { total: 0, limit: 5, skip: 0, data: [] }
+        await source.findPage({ query: { color: 'blue' }, limit: 5 })
+
+        expect(service.calls).toEqual([
+            ['find', { query: { kind: 'x', color: 'blue', $sort: { name: 1 }, $limit: 5, $skip: 0 } }],
+        ])
+    })
+
+    test('ignores a `$limit` and a `$skip` in the fixed query', async () => {
+        const { service, source } = setup({ query: { kind: 'x', $limit: 3, $skip: 7 } })
+        service.result = { total: 0, limit: 5, skip: 0, data: [] }
+        await source.findPage({ limit: 5 })
+
+        expect(service.calls).toEqual([['find', { query: { kind: 'x', $limit: 5, $skip: 0 } }]])
+    })
+
+    test('from a service that answers an array, the total is not known', async () => {
+        const { service, source } = setup()
+        service.result = [{ id: 'c' }, { id: 'd' }]
+
+        expect(await source.findPage({ limit: 2, skip: 2 })).toEqual({
+            records: [{ id: 'c' }, { id: 'd' }] as Item[],
+            total: undefined,
+            limit: 2,
+            skip: 2,
+        })
+    })
+
+    test('an empty array is not a count of 0', async () => {
+        const { service, source } = setup()
+        service.result = []
+
+        expect(await source.findPage({ limit: 0 })).toEqual({ records: [], total: undefined, limit: 0, skip: 0 })
+    })
+
+    test('a page that does not count has no total', async () => {
+        const { service, source } = setup()
+        service.result = { limit: 2, skip: 0, data: [{ id: 'a' }] }
+
+        expect(await source.findPage({ limit: 2 })).toMatchObject({ total: undefined, limit: 2, skip: 0 })
+    })
+
+    test('converts its records as every call does', async () => {
+        const { service, source } = setup({ idField: '_id' })
+        service.result = { total: 1, limit: 5, skip: 0, data: [{ _id: 7, name: 'A' }] }
+
+        expect((await source.findPage({ limit: 5 })).records).toEqual([{ id: '7', name: 'A' }])
+    })
+
+    test("a failed call rejects with the service's own error", async () => {
+        const { service, source } = setup()
+        service.result = Object.assign(new Error('Invalid query parameter $nope'), { name: 'BadRequest', code: 400 })
+
+        expect(source.findPage({ query: { $nope: 1 }, limit: 5 })).rejects.toMatchObject({ name: 'BadRequest' })
+    })
+})
+
 describe('calls', () => {
     test('each goes to the service method of its name', async () => {
         const { service, source } = setup()
@@ -472,6 +594,18 @@ describe('convert', () => {
             { id: '1', raw: { _id: 1 } },
             { id: '2', raw: { _id: 2 } },
         ])
+    })
+
+    test('reads the records of a page', async () => {
+        const { service, source } = setupEnvelope()
+        service.result = { total: 9, limit: 1, skip: 0, data: [{ _id: 1, id: 'its own' }] }
+
+        expect(await source.findPage({ limit: 1 })).toEqual({
+            records: [{ id: '1', raw: { _id: 1, id: 'its own' } }],
+            total: 9,
+            limit: 1,
+            skip: 0,
+        })
     })
 
     test('reads the record of each change event', () => {

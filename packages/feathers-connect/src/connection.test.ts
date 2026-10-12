@@ -205,6 +205,70 @@ describe('a record source over the connection', () => {
         expect((await firstThree.find()).map(item => item.id)).toEqual(['a', 'b', 'c'])
     })
 
+    test('findPage() reads one page of a paginated service, and its total', async () => {
+        app.use('pages', new MemoryService({ id: 'id', paginate: { default: 2, max: 3 } }))
+        const source = connection.recordSource<Item>('pages')
+        await connection.connect()
+
+        for (const id of ['a', 'b', 'c', 'd', 'e']) await source.create({ id, name: id.toUpperCase() })
+
+        expect(await source.findPage({ limit: 2, skip: 2 })).toEqual({
+            records: [
+                { id: 'c', name: 'C' },
+                { id: 'd', name: 'D' },
+            ],
+            total: 5,
+            limit: 2,
+            skip: 2,
+        })
+        // The service's maximum is 3
+        expect(await source.findPage({ limit: 100 })).toMatchObject({ total: 5, limit: 3, skip: 0 })
+        expect(await source.findPage({ limit: 0 })).toEqual({ records: [], total: 5, limit: 0, skip: 0 })
+    })
+
+    test('findPage() takes a query for the call: narrowed, sorted, and counted as narrowed', async () => {
+        app.use('pages', new MemoryService({ id: 'id', paginate: { default: 10, max: 10 } }))
+        const source = connection.recordSource<Item>('pages')
+        await connection.connect()
+
+        for (const id of ['a', 'b', 'c', 'd', 'e']) await source.create({ id, name: id < 'd' ? 'early' : 'late' })
+
+        const page = await source.findPage({ query: { name: 'early', $sort: { id: -1 } }, limit: 2 })
+
+        expect(page.records.map(item => item.id)).toEqual(['c', 'b'])
+        expect(page.total).toBe(3)
+    })
+
+    test('findPage() of a service without pagination gets the records asked for, and no total', async () => {
+        const source = connection.recordSource<Item>('items')
+        await connection.connect()
+
+        for (const id of ['a', 'b', 'c', 'd', 'e']) await source.create({ id, name: id.toUpperCase() })
+
+        const page = await source.findPage({ limit: 2, skip: 2 })
+
+        expect(page.records.map(item => item.id)).toEqual(['c', 'd'])
+        expect(page).toMatchObject({ total: undefined, limit: 2, skip: 2 })
+        // It cannot count: no records, and no total
+        expect(await source.findPage({ limit: 0 })).toEqual({ records: [], total: undefined, limit: 0, skip: 0 })
+    })
+
+    test('a listener hears every change, whatever a findPage() call or the fixed query narrows to', async () => {
+        const source = connection.recordSource<Item>('items', { query: { name: 'A' } })
+        const heard: Item[] = []
+        source.onCreated(record => heard.push(record))
+        await connection.connect()
+
+        await source.findPage({ query: { name: 'nothing has this name' }, limit: 1 })
+        await source.create({ id: 'a', name: 'A' })
+        await source.create({ id: 'b', name: 'B' })
+        const last = next<Item>(listener => source.onCreated(listener))
+        await source.create({ id: 'c', name: 'C' })
+        await last
+
+        expect(heard.map(item => item.id)).toEqual(['a', 'b', 'c'])
+    })
+
     test('a service with number IDs is read and written by string IDs', async () => {
         // With no ID given, the memory service numbers its records from 0
         app.use('numbered', new MemoryService({ id: 'id' }))

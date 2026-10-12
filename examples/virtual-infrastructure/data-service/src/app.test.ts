@@ -119,6 +119,20 @@ describe('records', () => {
         })
     })
 
+    test('a record source reads a page of them, and their number', async () => {
+        const { port } = await start()
+        const servers = (await connect(port)).recordSource<ServerRecord>(SERVICES.servers)
+
+        for (const id of ['s1', 's2', 's3']) await servers.create({ ...server1, id, name: id })
+
+        expect(await servers.findPage({ limit: 0 })).toEqual({ records: [], total: 3, limit: 0, skip: 0 })
+
+        const page = await servers.findPage({ query: { $sort: { name: -1 } }, limit: 2 })
+
+        expect(page.records.map(server => server.id)).toEqual(['s3', 's2'])
+        expect(page).toMatchObject({ total: 3, limit: 2, skip: 0 })
+    })
+
     test('a query the service does not know is refused, not answered with nothing', async () => {
         const { port } = await start()
         const raw = (await connect(port)).service(SERVICES.servers)

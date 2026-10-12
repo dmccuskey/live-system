@@ -20,10 +20,39 @@ interface Page {
     data: BackendRecord[]
     total?: number
     limit?: number
+    skip?: number
 }
 
 /** What `find` may return: a page, an array or a single record. */
 type FindResult = BackendRecord | BackendRecord[] | Page
+
+/** What `findPage` is asked for. */
+export interface FindPageOptions {
+    /**
+     * A Feathers query for this call: fields to narrow by, `$sort`, `$select`.
+     * It is merged with the source's fixed query, and wins where both have a field.
+     */
+    query?: Record<string, unknown>
+    /** How many records at most. With 0, none: the answer is then the number of records alone. */
+    limit: number
+    /** How many records to pass over first. 0 unless given. */
+    skip?: number
+}
+
+/** A part of a service's records, as `findPage` answers it. */
+export interface RecordPage<T> {
+    records: T[]
+    /**
+     * How many records the query matches in all. `undefined` when the service
+     * did not answer with a page: it does not paginate, or it does not know
+     * `$limit` and `$skip` at all, and then `records` may not be a page either.
+     */
+    total: number | undefined
+    /** The limit the service applied, which may be lower than the one asked for. The one asked for, without a page. */
+    limit: number
+    /** The skip the service applied. The one asked for, without a page. */
+    skip: number
+}
 
 type ChangeEvent = 'created' | 'updated' | 'patched' | 'removed'
 
@@ -148,6 +177,38 @@ export class FeathersRecordSource<T extends HasId> {
         }
 
         return records.map(record => this.#toRecord(record))
+    }
+
+    /**
+     * One page of the records, and how many there are in all. For a service
+     * too large to read whole, and for a query that changes from call to call.
+     * It asks the service with `$limit` and `$skip`, which a service on a
+     * Feathers database adapter knows. What another service makes of them is
+     * its own: only a `total` in the answer says that the service paged.
+     */
+    async findPage(options: FindPageOptions): Promise<RecordPage<T>> {
+        // The fixed query's own $limit and $skip are for find()
+        const { $limit: _limit, $skip: _skip, ...fixed } = this.#query ?? {}
+        const skip = options.skip ?? 0
+        const result = (await this.#service.find({
+            query: { ...fixed, ...options.query, $limit: options.limit, $skip: skip },
+        })) as FindResult
+
+        if (!isPage(result)) {
+            return {
+                records: toArray(result).map(record => this.#toRecord(record)),
+                total: undefined,
+                limit: options.limit,
+                skip,
+            }
+        }
+
+        return {
+            records: result.data.map(record => this.#toRecord(record)),
+            total: typeof result.total === 'number' ? result.total : undefined,
+            limit: result.limit ?? options.limit,
+            skip: result.skip ?? skip,
+        }
     }
 
     /** One record. Rejects when it does not exist. */

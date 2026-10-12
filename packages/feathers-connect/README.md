@@ -32,14 +32,14 @@ await connection.disconnect()
 - `connect()` resolves once connected and rejects when the data service can't be reached.
 - Record sources can be taken, and listeners attached, before `connect()`.
 - `find()` always returns an array of every record, whether the service returns pages, an array or a single record.
-- A paginated service is read page after page.
+- A paginated service is read page after page by `find()`, or one page at a time, with its total, by `findPage()`.
 - Each subscription returns a function that ends it.
 - A record's `id` is always a string, also from a service with number IDs.
 - A backend that names its ID otherwise (`_id`) is converted with `idField`, and any other shape of record with `convert`.
 - A failed call rejects with Feathers' own error, unchanged.
 - A `FeathersRecordSource` satisfies LiveSystem's [`RecordSource`](../../docs/architecture.md#data-and-record-sources), with no dependency on LiveSystem.
 
-It has no authentication, no queries beyond a fixed one for `find()`, no REST transport, and it does not load records on its own or load them again after a lost connection. The data service must publish its events to the connection (Feathers [channels](https://feathersjs.com/api/channels.html)), or the listeners hear nothing.
+It has no authentication, no REST transport, and it does not load records on its own or load them again after a lost connection. The data service must publish its events to the connection (Feathers [channels](https://feathersjs.com/api/channels.html)), or the listeners hear nothing.
 
 ## Quick Start
 
@@ -199,6 +199,7 @@ Each call returns a new record source. They share the connection.
 |                                                                                            |                                                                                                         |
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | `find(): Promise<T[]>`                                                                     | every record, or every record matching the fixed `query`, see [paginated services](#paginated-services) |
+| `findPage({ query?, limit, skip? }): Promise<RecordPage<T>>`                               | one page of the records and how many there are in all, see [one page at a time](#one-page-at-a-time)    |
 | `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                                              |
 | `isNotFound(error): boolean`                                                               | whether what a call rejected with is Feathers' `NotFound`: the record does not exist                    |
 | `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one                      |
@@ -252,6 +253,45 @@ The pages are separate calls, so the result is not a snapshot of one moment. A r
 
 A fixed `query` with a `$limit` asks for that many records: `find()` then returns the one page and reads no further. A `$skip` in the fixed `query` is where the reading starts.
 
+#### One Page at a Time
+
+`findPage()` reads a part of the records, for a service too large to read whole and for a query that changes from call to call:
+
+```ts
+const page = await messages.findPage({
+    query: { channel: 'general', $sort: { createdAt: -1 } },
+    limit: 25,
+    skip: 50,
+})
+
+page.records // up to 25 messages
+page.total // how many the query matches in all
+```
+
+- `query`: a Feathers query for this call: fields to narrow by, and `$sort` and `$select`. Optional. On a record source with a fixed `query` the two are merged, and the call's wins where both have a field.
+- `limit`: how many records at most. With 0 there are none, and the answer is the number of records alone.
+- `skip`: how many records to pass over first. Optional, 0 by default.
+
+`findPage()` sets `$limit` and `$skip` itself: one in the call's query, or in the fixed query, is ignored.
+
+It resolves with:
+
+- `records`: the records of the page, converted as every record is.
+- `total`: how many records the query matches in all, or `undefined` when the service did not say.
+- `limit` and `skip`: the ones the service applied. A service has a maximum of its own, so `limit` may be lower than the one asked for: go on to the next page by the answer, not by the request.
+
+`findPage()` needs a service that knows `$limit` and `$skip`, which every service on a Feathers database adapter does. Feathers itself gives a query no meaning, so a service written by hand may make of them what it likes. What the answer tells you:
+
+| the service                                   | answers                                                                                      | `total`     |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------- |
+| paginates                                     | a page                                                                                       | a number    |
+| is on a database adapter, with pagination off | the records asked for, as an array                                                           | `undefined` |
+| does not know `$limit` and `$skip`            | whatever it makes of them: every record, or none. One that checks its query rejects the call | `undefined` |
+
+So a `total` is the only sign that the service paged. Without one, `limit` and `skip` are the ones asked for, an empty `records` cannot be told from a query the service did not understand, and a `limit` of 0 counts nothing. `findPage()` does not guess which kind of service it has: an application that must know asks for the count first, and reads with `find()` where there is none.
+
+Like the pages `find()` reads, two pages are two calls: a record created or removed between them moves the records behind it.
+
 #### Calls That Are Not Answered
 
 A call that gets no answer rejects with an `Error`, so nothing waits for the data service forever:
@@ -265,6 +305,8 @@ A call that gets no answer rejects with an `Error`, so nothing waits for the dat
 A call made while the connection is away is held, and sent once the connection is back, before `onReconnected` is called. After `requestTimeout` it is rejected and no longer sent. A write that was under way when the connection was lost may have been made all the same: the data service had it, and only its answer was lost.
 
 A listener hears the changes the data service publishes to this connection, including those this client made itself. The same function subscribed twice is two subscriptions.
+
+The change events are never narrowed by a query: neither by the fixed `query` of the record source nor by the query of a `findPage()` call. A listener hears every change of the service that the data service publishes to this connection, also of a record no call of this source would return. Which changes those are is the data service's doing (its channels).
 
 A record source can also be made directly, over any object with the Feathers service methods and `on` and `off` (the exported type `FeathersServiceLike`), which is how it is tested without a socket:
 
