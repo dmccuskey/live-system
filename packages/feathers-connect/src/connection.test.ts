@@ -205,6 +205,58 @@ describe('a record source over the connection', () => {
         expect((await firstThree.find()).map(item => item.id)).toEqual(['a', 'b', 'c'])
     })
 
+    test('a service with number IDs is read and written by string IDs', async () => {
+        // With no ID given, the memory service numbers its records from 0
+        app.use('numbered', new MemoryService({ id: 'id' }))
+        const source = connection.recordSource<Item>('numbered')
+        const created = next<Item>(listener => source.onCreated(listener))
+        await connection.connect()
+
+        expect(await source.create({ name: 'A' })).toEqual({ id: '0', name: 'A' })
+        expect(await created).toEqual({ id: '0', name: 'A' })
+        expect(await source.create({ name: 'B' })).toEqual({ id: '1', name: 'B' })
+
+        expect(await source.get('1')).toEqual({ id: '1', name: 'B' })
+        expect(await source.patch('1', { name: 'B2' })).toEqual({ id: '1', name: 'B2' })
+        expect(await source.find()).toEqual([
+            { id: '0', name: 'A' },
+            { id: '1', name: 'B2' },
+        ])
+        expect(await source.remove('0')).toEqual({ id: '0', name: 'A' })
+        expect(source.get('0')).rejects.toMatchObject({ name: 'NotFound', code: 404 })
+    })
+
+    test('`convert` keeps a record as the service has it, an `id` of its own included', async () => {
+        interface Envelope {
+            id: string
+            raw: Record<string, unknown>
+        }
+
+        app.use('documents', new MemoryService({ id: '_id' }))
+        const source = connection.recordSource<Envelope>('documents', {
+            convert: {
+                read: backend => ({ id: String(backend._id), raw: backend }),
+                write: data => data.raw ?? {},
+            },
+        })
+        const renamed = connection.recordSource<Item>('documents', { idField: '_id' })
+        const patched = next<Envelope>(listener => source.onPatched(listener))
+        await connection.connect()
+
+        const created = await source.create({ raw: { id: 'its own', name: 'A' } })
+
+        expect(created).toEqual({ id: '0', raw: { _id: 0, id: 'its own', name: 'A' } })
+        expect(await source.patch('0', { raw: { name: 'A2' } })).toEqual({
+            id: '0',
+            raw: { _id: 0, id: 'its own', name: 'A2' },
+        })
+        expect(await patched).toEqual({ id: '0', raw: { _id: 0, id: 'its own', name: 'A2' } })
+        expect(await source.find()).toEqual([{ id: '0', raw: { _id: 0, id: 'its own', name: 'A2' } }])
+
+        // The default conversion would have to drop the record's own `id`
+        expect(renamed.find()).rejects.toThrow(/field `id` of its own/)
+    })
+
     test('get() of a missing record rejects with NotFound', async () => {
         const source = connection.recordSource<Item>('items')
         await connection.connect()

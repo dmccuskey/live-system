@@ -7,6 +7,7 @@ export {
     type FeathersServiceLike,
     type HasId,
     type NewRecord,
+    type RecordConversion,
     type RecordListener,
     type Unsubscribe,
 } from './record-source.ts'
