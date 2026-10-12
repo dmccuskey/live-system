@@ -125,8 +125,9 @@ export class FeathersConnection {
     }
 
     /** A record source over the service at a path. */
-    recordSource<T extends HasId>(path: string, options?: FeathersRecordSourceOptions): FeathersRecordSource<T> {
+    recordSource<T extends HasId>(path: string, options?: FeathersRecordSourceOptions<T>): FeathersRecordSource<T> {
         return new FeathersRecordSource<T>(this.service(path), {
+            path,
             ...options,
             onReconnected: listener => this.onReconnected(listener),
         })

@@ -34,7 +34,8 @@ await connection.disconnect()
 - `find()` always returns an array of every record, whether the service returns pages, an array or a single record.
 - A paginated service is read page after page.
 - Each subscription returns a function that ends it.
-- A backend that names its ID otherwise (`_id`) is converted with `idField`.
+- A record's `id` is always a string, also from a service with number IDs.
+- A backend that names its ID otherwise (`_id`) is converted with `idField`, and any other shape of record with `convert`.
 - A failed call rejects with Feathers' own error, unchanged.
 - A `FeathersRecordSource` satisfies LiveSystem's [`RecordSource`](../../docs/architecture.md#data-and-record-sources), with no dependency on LiveSystem.
 
@@ -182,8 +183,10 @@ connection.recordSource<Message>('messages', { idField: '_id', query: { channel:
 
 Returns a [`FeathersRecordSource<T>`](#feathersrecordsource) over the service at `path`. The record type `T` must have a string `id`. The options:
 
-- `idField`: the backend's name for the record ID, when it is not `id`. Records come back with `id` instead of that field, and go out with that field instead of `id`. The value is not converted: a backend with numeric IDs gives numbers.
+- `idField`: the backend's name for the record ID, when it is not `id`. Records come back with `id` instead of that field, and go out with that field instead of `id`.
+- `convert`: replaces the default conversion of a record, for a record type that is not the backend's record with its ID renamed. See [records and their IDs](#records-and-their-ids). Not together with `idField`: giving both throws.
 - `query`: a fixed Feathers query that every `find()` sends, for a source that covers only a part of the service's records. With a `$limit` of its own, `find()` returns that one page and reads no further.
+- `onEventError`: called when the record of a change event cannot be converted, see [records and their IDs](#records-and-their-ids). Logs with `console.error` by default.
 
 Each call returns a new record source. They share the connection.
 
@@ -206,6 +209,40 @@ Each call returns a new record source. They share the connection.
 | `onReconnected(listener)`                                                                  | hear the connection being made again after it was lost, see [onReconnected](#onreconnected)             |
 
 A call that fails rejects with Feathers' error as it arrived: a missing record gives an error with the `name` `'NotFound'` and the `code` `404`.
+
+#### Records and Their IDs
+
+A record is the backend's record, as a plain object, with its ID under `id` and as a string:
+
+- **A number ID becomes a string.** A SQL service gives `{ id: 5 }`, and the record source hands on `{ id: '5' }`. The calls take the string: `get('5')`, `patch('5', data)`. Feathers' SQL adapter finds the row by it (checked with `@feathersjs/knex` on SQLite).
+- **Another ID field is renamed,** with `idField`: `{ _id: 'a' }` comes back as `{ id: 'a' }`, and goes out as `{ _id: 'a' }`.
+- **A record with no ID** is handed on as it is.
+
+A backend record that has a field `id` of its own beside its ID field (`{ _id: 'a', id: 'its own' }`) cannot be renamed without losing that field. The record source refuses it: the call rejects with an error that names the two fields. Use `convert` for such a service.
+
+`convert` replaces all of the above with two functions of your own:
+
+```ts
+interface Document {
+    id: string
+    raw: Record<string, unknown> // the record as the service has it
+}
+
+const documents = connection.recordSource<Document>('documents', {
+    convert: {
+        read: backend => ({ id: String(backend._id), raw: backend }),
+        write: data => data.raw ?? {},
+    },
+})
+
+await documents.patch('5', { raw: { title: 'New' } }) // sends { title: 'New' }
+```
+
+- `read(backend)` makes a record of what the service gave. It is called for every record that comes in: from `find()` and `get()`, as the answer of a `create()`, `update()`, `patch()` or `remove()`, and with each change event. Its `id` must be a string, since nothing converts it afterwards.
+- `write(data)` makes what the service is sent, from the data of a `create()`, an `update()` or a `patch()`. For a patch it gets a part of a record, so it must not expect every field.
+- The IDs given to `get()`, `update()`, `patch()` and `remove()` go to the service as they are.
+
+When a conversion fails, by the refusal above or by an error your `read` throws, a call rejects with that error. A change event has no caller to reject to, so the event is not delivered to its listeners, and `onEventError` is called with the error. By default that logs it with `console.error`, with the service's path. The record is then missing from what the listeners heard, until the records are read again.
 
 #### Paginated Services
 

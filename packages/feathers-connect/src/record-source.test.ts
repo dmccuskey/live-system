@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { FeathersRecordSource, type FeathersServiceLike } from './record-source.ts'
+import {
+    FeathersRecordSource,
+    type FeathersRecordSourceOptions,
+    type FeathersServiceLike,
+    type RecordConversion,
+} from './record-source.ts'
 
 interface Item {
     id: string
@@ -57,7 +62,7 @@ class FakeService implements FeathersServiceLike {
     }
 }
 
-const setup = (options?: ConstructorParameters<typeof FeathersRecordSource>[1]) => {
+const setup = (options?: FeathersRecordSourceOptions<Item>) => {
     const service = new FakeService()
 
     return { service, source: new FeathersRecordSource<Item>(service, options) }
@@ -336,5 +341,262 @@ describe('idField', () => {
         service.emit('patched', { _id: 'a', name: 'A' })
 
         expect(heard).toEqual([{ id: 'a', name: 'A' }])
+    })
+
+    test('a record with an `id` of its own beside the ID field is refused, not robbed of it', async () => {
+        const { service, source } = setup({ idField: '_id' })
+        service.result = [{ _id: 'a', id: 'its own', name: 'A' }]
+
+        expect(source.find()).rejects.toThrow(/field `id` of its own beside its ID field `_id`.*`convert`/)
+
+        service.result = { _id: 'a', id: 'its own', name: 'A' }
+
+        expect(source.get('a')).rejects.toThrow(/`convert`/)
+    })
+})
+
+describe('number IDs', () => {
+    test('a number ID comes back as a string', async () => {
+        const { service, source } = setup()
+        service.result = [{ id: 5, name: 'A' }]
+
+        expect(await source.find()).toEqual([{ id: '5', name: 'A' }])
+
+        service.result = { id: 5, name: 'A' }
+
+        expect(await source.get('5')).toEqual({ id: '5', name: 'A' })
+        expect(await source.create({ name: 'A' })).toEqual({ id: '5', name: 'A' })
+        expect(await source.patch('5', { name: 'A' })).toEqual({ id: '5', name: 'A' })
+        expect(await source.remove('5')).toEqual({ id: '5', name: 'A' })
+    })
+
+    test('on every page', async () => {
+        const { service, source } = setup()
+        service.results = [
+            { total: 2, limit: 1, skip: 0, data: [{ id: 1, name: 'A' }] },
+            { total: 2, limit: 1, skip: 1, data: [{ id: 2, name: 'B' }] },
+        ]
+
+        expect((await source.find()).map(item => item.id)).toEqual(['1', '2'])
+    })
+
+    test('with another ID field too', async () => {
+        const { service, source } = setup({ idField: '_id' })
+        service.result = { _id: 5, name: 'A' }
+
+        expect(await source.get('5')).toEqual({ id: '5', name: 'A' })
+    })
+
+    test('a listener hears it as a string', () => {
+        const { service, source } = setup()
+        const heard: Item[] = []
+        source.onCreated(record => heard.push(record))
+
+        service.emit('created', { id: 5, name: 'A' })
+
+        expect(heard).toEqual([{ id: '5', name: 'A' }])
+    })
+
+    test('the ID goes to the service as the string it was given', async () => {
+        const { service, source } = setup()
+        service.result = { id: 5, name: 'A' }
+        await source.get('5')
+        await source.patch('5', { name: 'B' })
+
+        expect(service.calls).toEqual([
+            ['get', '5'],
+            ['patch', '5', { name: 'B' }],
+        ])
+    })
+
+    test('a record with a string ID is handed on as it is', async () => {
+        const { service, source } = setup()
+        const record = { id: 'a', name: 'A' }
+        service.result = record
+
+        expect(await source.get('a')).toBe(record)
+    })
+
+    test('a record with no ID is left without one', async () => {
+        const { service, source } = setup()
+        service.result = [{ name: 'A' }, { id: null, name: 'B' }]
+
+        expect(await source.find()).toEqual([{ name: 'A' }, { id: null, name: 'B' }] as unknown as Item[])
+    })
+})
+
+describe('convert', () => {
+    /** The record as the backend has it, beside an `id` to find it by. */
+    interface Envelope {
+        id: string
+        raw: Record<string, unknown>
+    }
+
+    const envelope: RecordConversion<Envelope> = {
+        read: backend => ({ id: String(backend._id), raw: backend }),
+        write: data => data.raw ?? {},
+    }
+
+    const setupEnvelope = (options?: FeathersRecordSourceOptions<Envelope>) => {
+        const service = new FakeService()
+
+        return { service, source: new FeathersRecordSource<Envelope>(service, { convert: envelope, ...options }) }
+    }
+
+    test('reads every record that comes back from a call', async () => {
+        const { service, source } = setupEnvelope()
+        const raw = { _id: 5, id: 'its own', name: 'A' }
+        const record = { id: '5', raw }
+
+        service.result = [raw]
+
+        expect(await source.find()).toEqual([record])
+
+        service.result = raw
+
+        expect(await source.get('5')).toEqual(record)
+        expect(await source.create({ raw: { name: 'A' } })).toEqual(record)
+        expect(await source.update('5', record)).toEqual(record)
+        expect(await source.patch('5', { raw: { name: 'A' } })).toEqual(record)
+        expect(await source.remove('5')).toEqual(record)
+    })
+
+    test('reads every page', async () => {
+        const { service, source } = setupEnvelope()
+        service.results = [
+            { total: 2, limit: 1, skip: 0, data: [{ _id: 1 }] },
+            { total: 2, limit: 1, skip: 1, data: [{ _id: 2 }] },
+        ]
+
+        expect(await source.find()).toEqual([
+            { id: '1', raw: { _id: 1 } },
+            { id: '2', raw: { _id: 2 } },
+        ])
+    })
+
+    test('reads the record of each change event', () => {
+        const { service, source } = setupEnvelope()
+        const heard: Envelope[] = []
+        source.onCreated(record => heard.push(record))
+        source.onUpdated(record => heard.push(record))
+        source.onPatched(record => heard.push(record))
+        source.onRemoved(record => heard.push(record))
+
+        for (const event of ['created', 'updated', 'patched', 'removed']) service.emit(event, { _id: 5, event })
+
+        expect(heard).toEqual([
+            { id: '5', raw: { _id: 5, event: 'created' } },
+            { id: '5', raw: { _id: 5, event: 'updated' } },
+            { id: '5', raw: { _id: 5, event: 'patched' } },
+            { id: '5', raw: { _id: 5, event: 'removed' } },
+        ])
+    })
+
+    test('writes what a create, an update and a patch send', async () => {
+        const { service, source } = setupEnvelope()
+        service.result = { _id: 5 }
+
+        await source.create({ raw: { id: 'its own', name: 'A' } })
+        await source.update('5', { id: '5', raw: { _id: 5, name: 'B' } })
+        await source.patch('5', { raw: { name: 'C' } })
+
+        expect(service.calls).toEqual([
+            ['create', { id: 'its own', name: 'A' }],
+            ['update', '5', { _id: 5, name: 'B' }],
+            ['patch', '5', { name: 'C' }],
+        ])
+    })
+
+    test('keeps the fixed query', async () => {
+        const { service, source } = setupEnvelope({ query: { kind: 'x' } })
+        service.result = []
+        await source.find()
+
+        expect(service.calls).toEqual([['find', { query: { kind: 'x' } }]])
+    })
+
+    test('is refused together with `idField`', () => {
+        expect(
+            () => new FeathersRecordSource<Envelope>(new FakeService(), { convert: envelope, idField: '_id' }),
+        ).toThrow(/`convert` or `idField`, not both/)
+    })
+
+    test('what `read` throws rejects the call', async () => {
+        const failing: RecordConversion<Envelope> = {
+            ...envelope,
+            read: () => {
+                throw new Error('not a record')
+            },
+        }
+        const service = new FakeService()
+        const source = new FeathersRecordSource<Envelope>(service, { convert: failing })
+        service.result = { _id: 5 }
+
+        expect(source.get('5')).rejects.toThrow('not a record')
+    })
+})
+
+describe('a change event whose record cannot be converted', () => {
+    test('is not delivered, and is reported to `onEventError`', () => {
+        const errors: unknown[] = []
+        const { service, source } = setup({ idField: '_id', onEventError: error => errors.push(error) })
+        const heard: Item[] = []
+        source.onCreated(record => heard.push(record))
+
+        service.emit('created', { _id: 'a', id: 'its own', name: 'A' })
+        service.emit('created', { _id: 'b', name: 'B' })
+
+        expect(heard).toEqual([{ id: 'b', name: 'B' }])
+        expect(errors).toHaveLength(1)
+        expect((errors[0] as Error).message).toMatch(/field `id` of its own/)
+    })
+
+    test("so is one that the app's own `read` throws on", () => {
+        const errors: unknown[] = []
+        const service = new FakeService()
+        const source = new FeathersRecordSource<Item>(service, {
+            convert: {
+                read: () => {
+                    throw new Error('not a record')
+                },
+                write: data => data,
+            },
+            onEventError: error => errors.push(error),
+        })
+        const heard: Item[] = []
+        source.onPatched(record => heard.push(record))
+
+        expect(() => service.emit('patched', { id: 'a' })).not.toThrow()
+        expect(heard).toEqual([])
+        expect(errors).toEqual([new Error('not a record')])
+    })
+
+    test('is logged with the path of the service, without the option', () => {
+        const logged: unknown[][] = []
+        const original = console.error
+        console.error = (...args: unknown[]) => logged.push(args)
+
+        try {
+            const { service, source } = setup({ idField: '_id', path: 'messages' })
+            source.onCreated(() => {})
+            service.emit('created', { _id: 'a', id: 'its own' })
+        } finally {
+            console.error = original
+        }
+
+        expect(logged).toHaveLength(1)
+        expect(logged[0]![0]).toMatch(/^FeathersRecordSource 'messages': a change event was not delivered/)
+        expect(logged[0]![1]).toBeInstanceOf(Error)
+    })
+
+    test("what a listener itself throws is not caught: it is the listener's own", () => {
+        const errors: unknown[] = []
+        const { service, source } = setup({ onEventError: error => errors.push(error) })
+        source.onCreated(() => {
+            throw new Error('from the listener')
+        })
+
+        expect(() => service.emit('created', { id: 'a', name: 'A' })).toThrow('from the listener')
+        expect(errors).toEqual([])
     })
 })

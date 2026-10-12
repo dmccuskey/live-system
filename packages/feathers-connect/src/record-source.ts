@@ -42,9 +42,36 @@ export interface FeathersServiceLike {
     off(event: string, listener: (record: any) => void): unknown
 }
 
-export interface FeathersRecordSourceOptions {
-    /** The backend's name for the record ID, when it is not `id` (for example `_id`). */
+/**
+ * How a record source turns the backend's records into its own and back, in
+ * place of the default conversion. For a record type that is not the
+ * backend's record with its ID renamed: one that keeps the record as the
+ * backend has it, for example, beside an `id` to find it by.
+ */
+export interface RecordConversion<T extends HasId> {
+    /** Makes a record of what the backend gave. Its `id` must be a string. */
+    read(backend: Record<string, unknown>): T
+    /** Makes what the backend is sent of a record, or of the part of one a patch holds. */
+    write(data: Partial<T>): Record<string, unknown>
+}
+
+export interface FeathersRecordSourceOptions<T extends HasId = HasId> {
+    /**
+     * The backend's name for the record ID, when it is not `id` (for example
+     * `_id`). A backend record that has a field `id` of its own beside it is
+     * refused: use `convert` for such a service.
+     */
     idField?: string
+    /** Replaces the default conversion. Not together with `idField`. */
+    convert?: RecordConversion<T>
+    /**
+     * Called when the record of a change event cannot be converted, with what
+     * the conversion threw. The event is then not delivered: a listener has no
+     * caller to pass the failure to. Logs with `console.error` by default.
+     */
+    onEventError?: (error: unknown) => void
+    /** The service's path, for the source's own messages. `connection.recordSource()` supplies it. */
+    path?: string
     /**
      * A fixed query for `find`, when the source covers only a part of the
      * service's records. With a `$limit` of its own, `find` returns that one
@@ -68,14 +95,28 @@ export interface FeathersRecordSourceOptions {
 export class FeathersRecordSource<T extends HasId> {
     #service: FeathersServiceLike
     #idField: string
+    #convert: RecordConversion<T> | undefined
     #query: Record<string, unknown> | undefined
     #onReconnected: ((listener: () => void) => Unsubscribe) | undefined
+    #onEventError: (error: unknown) => void
 
-    constructor(service: FeathersServiceLike, options: FeathersRecordSourceOptions = {}) {
+    constructor(service: FeathersServiceLike, options: FeathersRecordSourceOptions<T> = {}) {
+        if (options.convert && options.idField !== undefined) {
+            throw new Error('A record source takes `convert` or `idField`, not both: `convert` decides the ID itself')
+        }
+
         this.#service = service
         this.#idField = options.idField ?? 'id'
+        this.#convert = options.convert
         this.#query = options.query
         this.#onReconnected = options.onReconnected
+
+        const name = options.path === undefined ? 'FeathersRecordSource' : `FeathersRecordSource '${options.path}'`
+
+        this.#onEventError =
+            options.onEventError ??
+            (error =>
+                console.error(`${name}: a change event was not delivered, its record could not be converted`, error))
     }
 
     /**
@@ -161,7 +202,19 @@ export class FeathersRecordSource<T extends HasId> {
 
     #on(event: ChangeEvent, listener: RecordListener<T>): Unsubscribe {
         // A wrapper of its own, so the same function subscribed twice is two subscriptions
-        const entry = (record: unknown) => listener(this.#toRecord(record))
+        const entry = (backend: unknown) => {
+            let record: T
+
+            // Thrown from here, the failure would reach the socket's own handler, and in Node could end the process
+            try {
+                record = this.#toRecord(backend)
+            } catch (error) {
+                this.#onEventError(error)
+                return
+            }
+
+            listener(record)
+        }
 
         this.#service.on(event, entry)
 
@@ -170,21 +223,41 @@ export class FeathersRecordSource<T extends HasId> {
         }
     }
 
+    // The default conversion: the backend's record, with its ID under `id` and as a string
     #toRecord(backend: unknown): T {
-        if (this.#idField === 'id') return backend as T
+        if (this.#convert) return this.#convert.read(backend as BackendRecord)
 
-        const { [this.#idField]: id, ...rest } = backend as BackendRecord
+        const record = backend as BackendRecord
 
-        return { ...rest, id } as T
+        if (this.#idField === 'id') {
+            return (hasOtherId(record.id) ? { ...record, id: String(record.id) } : record) as T
+        }
+
+        if (Object.hasOwn(record, 'id')) {
+            throw new Error(
+                `A record has a field \`id\` of its own beside its ID field \`${this.#idField}\`, and renaming ` +
+                    `\`${this.#idField}\` to \`id\` would lose it. Give the record source \`convert\` in place of \`idField\`.`,
+            )
+        }
+
+        const { [this.#idField]: id, ...rest } = record
+
+        return { ...rest, id: hasOtherId(id) ? String(id) : id } as T
     }
 
     #toBackend(data: object): BackendRecord {
+        if (this.#convert) return this.#convert.write(data as Partial<T>)
         if (this.#idField === 'id') return data as BackendRecord
 
         const { id, ...rest } = data as BackendRecord
 
         return id === undefined ? rest : { ...rest, [this.#idField]: id }
     }
+}
+
+// An ID the backend gave in another form than a string: a number, from a SQL service. None is left as it is.
+function hasOtherId(id: unknown): boolean {
+    return id !== undefined && id !== null && typeof id !== 'string'
 }
 
 function isPage(result: FindResult): result is Page {
