@@ -1,6 +1,11 @@
 // The Feathers connection and the record sources over its services.
 // No dependency on LiveSystem.
-export { FeathersConnection, type FeathersConnectionOptions } from './connection.ts'
+export {
+    FeathersConnection,
+    type AuthenticationRequest,
+    type AuthenticationResult,
+    type FeathersConnectionOptions,
+} from './connection.ts'
 export {
     FeathersRecordSource,
     type FeathersRecordSourceOptions,
