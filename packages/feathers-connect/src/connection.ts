@@ -14,8 +14,15 @@ import {
 export interface FeathersConnectionOptions {
     /** The data service's address, for example `http://localhost:3030`. */
     url: string
-    /** How long `connect()` waits, in milliseconds. */
+    /** How long `connect()` waits, in milliseconds. Not with `keepTrying`. */
     connectTimeout?: number
+    /**
+     * Whether `connect()` keeps trying until the data service is there,
+     * instead of rejecting on the first attempt that fails. Off unless given.
+     * socket.io paces the attempts, so an app adds no timer: about a second
+     * after the first, twice as long after each one, five seconds at most.
+     */
+    keepTrying?: boolean
     /**
      * How long a call to the data service waits for its answer, in
      * milliseconds. A call made while the connection is away is held until
@@ -56,6 +63,7 @@ export interface AuthenticationResult {
 
 type ConnectionListener = () => void
 type AuthenticationLostListener = (error: Error) => void
+type ConnectErrorListener = (error: Error) => void
 
 const DEFAULT_CONNECT_TIMEOUT = 5000
 const DEFAULT_REQUEST_TIMEOUT = 10_000
@@ -74,6 +82,7 @@ const MAX_TIMER_DELAY = 2 ** 31 - 1
 export class FeathersConnection {
     #url: string
     #connectTimeout: number
+    #keepTrying: boolean
     #requestTimeout: number
     #authenticationPath: string
     #socket: Socket
@@ -83,6 +92,9 @@ export class FeathersConnection {
     #reconnectedListeners = new Set<ConnectionListener>()
     #authenticatedListeners = new Set<ConnectionListener>()
     #authenticationLostListeners = new Set<AuthenticationLostListener>()
+    #connectErrorListeners = new Set<ConnectErrorListener>()
+    // The `connect()` that has not settled, shared by every call made meanwhile. `settle` resolves it, or rejects it with an error
+    #connecting: { promise: Promise<void>; settle: (error?: Error) => void } | undefined
     #hasConnected = false
     // The login: the token is kept to log in again on a new socket, the password never
     #token: string | undefined
@@ -101,6 +113,7 @@ export class FeathersConnection {
     constructor(options: FeathersConnectionOptions) {
         this.#url = options.url
         this.#connectTimeout = options.connectTimeout ?? DEFAULT_CONNECT_TIMEOUT
+        this.#keepTrying = options.keepTrying ?? false
         this.#requestTimeout = options.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT
         // Without the slashes around it, as Feathers names a service: a hook's `context.path` is compared with it
         this.#authenticationPath = (options.authentication?.path ?? DEFAULT_AUTHENTICATION_PATH).replace(
@@ -119,6 +132,7 @@ export class FeathersConnection {
             const isReconnect = this.#hasConnected
 
             this.#hasConnected = true
+            this.#connecting?.settle()
             this.#emit(this.#connectedListeners)
 
             if (isReconnect) this.#isReconnectedOwed = true
@@ -126,6 +140,15 @@ export class FeathersConnection {
             // A login belongs to the socket: a new socket is not logged in
             if (this.#token !== undefined) void this.#logInAgain(this.#token)
             else this.#emitReconnectedIfOwed()
+        })
+        this.#socket.on('connect_error', error => {
+            const connectError = this.#connectError(error.message, error)
+            // socket.io tries again by itself, unless the data service refused the connection
+            const isTryingOn = this.#keepTrying && this.#socket.active
+
+            if (!isTryingOn) this.#stopConnecting(connectError)
+
+            this.#emit(this.#connectErrorListeners, connectError)
         })
         this.#socket.on('disconnect', reason => {
             const hasLoggedIn = this.#token !== undefined || this.#isLoginLost
@@ -172,38 +195,45 @@ export class FeathersConnection {
     /**
      * Connects to the data service. Resolves once connected. Rejects on the
      * first connection error or when the timeout passes, and stops trying.
+     *
+     * With `keepTrying` it does not reject on an attempt that fails, and no
+     * timeout applies: it resolves at the first attempt that succeeds, however
+     * long that takes. socket.io paces the attempts (see `keepTrying`). It
+     * rejects only when the data service refuses the connection itself, which
+     * socket.io does not try again.
+     *
+     * Either way, `disconnect()` before it settles rejects it.
      */
     connect(): Promise<void> {
         if (this.isConnected) return Promise.resolve()
+        if (this.#connecting) return this.#connecting.promise
 
-        return new Promise<void>((resolve, reject) => {
-            const socket = this.#socket
-
-            const settle = () => {
+        let settle!: (error?: Error) => void
+        const promise = new Promise<void>((resolve, reject) => {
+            settle = error => {
                 clearTimeout(timer)
-                socket.off('connect', onConnect)
-                socket.off('connect_error', onError)
-            }
-            const onConnect = () => {
-                settle()
-                resolve()
-            }
-            const fail = (reason: string) => {
-                settle()
-                socket.disconnect()
-                reject(new Error(`Could not connect to the data service at ${this.#url}: ${reason}`))
-            }
-            const onError = (error: Error) => fail(error.message)
-            const timer = setTimeout(() => fail(`no connection after ${this.#connectTimeout} ms`), this.#connectTimeout)
+                this.#connecting = undefined
 
-            socket.on('connect', onConnect)
-            socket.on('connect_error', onError)
-            socket.connect()
+                if (error) reject(error)
+                else resolve()
+            }
         })
+        const timer = this.#keepTrying
+            ? undefined
+            : setTimeout(
+                  () => this.#stopConnecting(this.#connectError(`no connection after ${this.#connectTimeout} ms`)),
+                  this.#connectTimeout,
+              )
+
+        this.#connecting = { promise, settle }
+        this.#socket.connect()
+
+        return promise
     }
 
-    /** Closes the connection. It can be connected again. */
+    /** Closes the connection, and ends a `connect()` that is still trying. It can be connected again. */
     async disconnect(): Promise<void> {
+        this.#stopConnecting(this.#connectError('disconnect() was called'))
         this.#socket.disconnect()
     }
 
@@ -296,6 +326,27 @@ export class FeathersConnection {
         return this.#on(this.#authenticationLostListeners, listener)
     }
 
+    /**
+     * Called with the error each time an attempt to connect fails: the attempt
+     * of `connect()`, each one after it with `keepTrying`, and each of
+     * socket.io's attempts to bring a lost connection back.
+     */
+    onConnectError(listener: ConnectErrorListener): Unsubscribe {
+        return this.#on(this.#connectErrorListeners, listener)
+    }
+
+    #connectError(reason: string, cause?: Error): Error {
+        return new Error(`Could not connect to the data service at ${this.#url}: ${reason}`, { cause })
+    }
+
+    /** Ends a `connect()` that has not settled: it rejects with the error, and the socket stops trying. */
+    #stopConnecting(error: Error): void {
+        if (!this.#connecting) return
+
+        this.#socket.disconnect()
+        this.#connecting.settle(error)
+    }
+
     #sendLogin(request: AuthenticationRequest): Promise<AuthenticationResult> {
         return this.#client.service(this.#authenticationPath).create(request) as Promise<AuthenticationResult>
     }
@@ -337,10 +388,7 @@ export class FeathersConnection {
         this.#isReconnectedOwed = true
         this.#clearExpiryTimer()
         this.#releaseLoginWaiters()
-
-        for (const listener of [...this.#authenticationLostListeners]) {
-            listener(error)
-        }
+        this.#emit(this.#authenticationLostListeners, error)
     }
 
     /** Before every call but a login: holds it while a login is wanted and not yet done, for no longer than `requestTimeout`. */
@@ -419,9 +467,9 @@ export class FeathersConnection {
         }
     }
 
-    #emit(listeners: Set<ConnectionListener>): void {
+    #emit<A extends unknown[]>(listeners: Set<(...args: A) => void>, ...args: A): void {
         for (const listener of [...listeners]) {
-            listener()
+            listener(...args)
         }
     }
 }

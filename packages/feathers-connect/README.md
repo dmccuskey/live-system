@@ -29,7 +29,7 @@ await connection.disconnect()
 ## Features
 
 - One socket connection (socket.io), shared by every record source.
-- `connect()` resolves once connected and rejects when the data service can't be reached.
+- `connect()` resolves once connected and rejects when the data service can't be reached, or keeps trying until it can.
 - Record sources can be taken, and listeners attached, before `connect()`.
 - `find()` always returns an array of every record, whether the service returns pages, an array or a single record.
 - A paginated service is read page after page by `find()`, or one page at a time, with its total, by `findPage()`.
@@ -123,6 +123,7 @@ Delete `try.ts` when you are done.
 | [`connection.isConnected`](#isconnected)                                                          | whether the connection is made                  |
 | [`connection.onConnected(listener)`, `onDisconnected(listener)`](#onconnected-and-ondisconnected) | hear the connection being made and ending       |
 | [`connection.onReconnected(listener)`](#onreconnected)                                            | hear the connection being made again            |
+| [`connection.onConnectError(listener)`](#onconnecterror)                                          | hear why an attempt to connect failed           |
 | [`await connection.authenticate(request)`](#authenticate)                                         | logs in to the data service                     |
 | [`await connection.logout()`](#logout)                                                            | logs out                                        |
 | [`connection.isAuthenticated`, `connection.user`](#isauthenticated-and-user)                      | whether the connection is logged in, and as who |
@@ -138,6 +139,7 @@ Delete `try.ts` when you are done.
 new FeathersConnection({
     url: 'http://localhost:3030',
     connectTimeout: 5000,
+    keepTrying: false,
     requestTimeout: 10000,
     handshake: { token: 'a secret' },
     authentication: { path: 'authentication' },
@@ -145,7 +147,8 @@ new FeathersConnection({
 ```
 
 - `url`: the data service's address.
-- `connectTimeout`: how long `connect()` waits, in milliseconds. Optional, 5000 by default.
+- `connectTimeout`: how long `connect()` waits, in milliseconds. Optional, 5000 by default. It does not apply with `keepTrying`.
+- `keepTrying`: whether `connect()` keeps trying until the data service is there, instead of rejecting on the first attempt that fails. Optional, `false` by default. See [connect](#connect).
 - `requestTimeout`: how long a call to the data service waits for its answer, in milliseconds. Optional, 10000 by default. See [calls that are not answered](#calls-that-are-not-answered).
 - `handshake`: an object sent to the data service each time the connection is made, a reconnect included. It is Socket.IO's `auth`, so the data service reads it from `socket.handshake.auth`, for example to tell one kind of client from another. Optional, nothing by default.
 - `authentication.path`: the path of the data service's authentication service, for one that has it elsewhere (`app.use('auth', …)`). Optional, `authentication` by default. Slashes around it do not matter.
@@ -156,9 +159,24 @@ Creating a connection does not connect it. `connection.url` is the address it wa
 
 `await connection.connect()` resolves once the socket is connected. It rejects, with an `Error` naming the address and the reason, on the first connection error or when `connectTimeout` passes, and the connection then stops trying. Calling it on a connected connection resolves at once.
 
+With `keepTrying`, an attempt that fails does not reject it, and `connectTimeout` does not apply: it resolves at the first attempt that succeeds, however long that takes. This suits an app that starts before its data service, or without it:
+
+```ts
+const connection = new FeathersConnection({ url: 'http://localhost:3030', keepTrying: true })
+
+connection.onConnectError(error => console.log(error.message))
+await connection.connect()
+```
+
+socket.io paces the attempts, so the app adds no timer: the second comes about a second after the first, each wait is twice as long as the one before, up to five seconds, and each is varied by up to half at random. An attempt that gets no answer at all (an address that answers nothing) is ended by socket.io's own timeout of 20 seconds, which is not `connectTimeout`: the first `onConnectError` may then come that late, with the reason `timeout`. A connection that was logged in logs in again once it is made, and a call made meanwhile waits for no longer than `requestTimeout` (see [calls that are not answered](#calls-that-are-not-answered)).
+
+Even with `keepTrying`, `connect()` rejects when the data service itself refuses the connection (a Socket.IO middleware that answers with an error), since socket.io does not try that again.
+
+`disconnect()` before `connect()` has settled rejects it, with or without `keepTrying`, and ends the trying.
+
 ### disconnect
 
-`await connection.disconnect()` closes the socket. The connection can be connected again with `connect()`, and the listeners on its record sources stay attached.
+`await connection.disconnect()` closes the socket, and ends a `connect()` that is still trying, which rejects. The connection can be connected again with `connect()`, and the listeners on its record sources stay attached.
 
 ### isConnected
 
@@ -183,6 +201,14 @@ Called each time the connection is made after the first: when socket.io brings a
 A connection that was logged in logs in again first, so a listener's calls are made as the same user. When the login is lost instead, the listeners are held back until `authenticate()` succeeds. See [logging in again](#logging-in-again).
 
 Changes made while the connection was away are not replayed, so records read earlier may be out of date: read them again here. A record source of the connection passes this on as its own `onReconnected`, which is what a LiveSystem `DataManager` listens to.
+
+### onConnectError
+
+```ts
+const unsubscribe = connection.onConnectError(error => console.log(error.message))
+```
+
+Called with an `Error` each time an attempt to connect fails: the attempt of `connect()`, each one after it with `keepTrying`, and each of socket.io's attempts to bring a lost connection back. The error names the address and the reason, as the one `connect()` rejects with, and its `cause` is socket.io's own error. It is not called when `connectTimeout` passes, which is no attempt that failed: `connect()` rejects, and that is all.
 
 ### authenticate
 
