@@ -2,8 +2,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { BadRequest } from '@feathersjs/errors'
 import { feathers, type HookContext } from '@feathersjs/feathers'
 import { MemoryService } from '@feathersjs/memory'
+import { schema, hooks as schemaHooks } from '@feathersjs/schema'
 import socketio from '@feathersjs/socketio'
 import { FeathersConnection } from './connection.ts'
 
@@ -331,6 +333,93 @@ describe('a record source over the connection', () => {
         await connection.connect()
 
         expect(source.get('missing')).rejects.toMatchObject({ name: 'NotFound', code: 404 })
+    })
+
+    describe('a write that a schema refuses', () => {
+        /** A service whose writes Feathers' own schema hooks check: a name of at least two letters. */
+        const useCheckedService = () => {
+            const check = schema({
+                $id: 'CheckedItem',
+                type: 'object',
+                additionalProperties: false,
+                required: ['id', 'name'],
+                properties: { id: { type: 'string' }, name: { type: 'string', minLength: 2 } },
+            } as const)
+            const checkPatch = schema({
+                $id: 'CheckedItemPatch',
+                type: 'object',
+                additionalProperties: false,
+                properties: { id: { type: 'string' }, name: { type: 'string', minLength: 2 } },
+            } as const)
+
+            app.use('checked', new MemoryService({ id: 'id' }))
+            app.service('checked').hooks({
+                before: {
+                    create: [schemaHooks.validateData(check)],
+                    update: [schemaHooks.validateData(check)],
+                    patch: [schemaHooks.validateData(checkPatch)],
+                },
+            })
+        }
+
+        /** What Ajv reports of a name too short: Feathers' schema hooks hand its list on as `data`. */
+        const tooShort = [expect.objectContaining({ instancePath: '/name', keyword: 'minLength' })]
+
+        test('rejects a create, an update and a patch with the BadRequest as the data service sent it', async () => {
+            useCheckedService()
+            const source = connection.recordSource<Item>('checked')
+            await connection.connect()
+            await source.create({ id: 'a', name: 'Alpha' })
+
+            for (const write of [
+                source.create({ id: 'b', name: 'B' }),
+                source.update('a', { id: 'a', name: 'A' }),
+                source.patch('a', { name: 'A' }),
+            ]) {
+                const error = await write.then(
+                    () => undefined,
+                    (error: unknown) => error,
+                )
+
+                expect(error).toBeInstanceOf(BadRequest)
+                expect(error).toMatchObject({
+                    name: 'BadRequest',
+                    code: 400,
+                    className: 'bad-request',
+                    message: 'validation failed',
+                    data: tooShort,
+                })
+                expect((error as BadRequest).errors).toBeUndefined()
+            }
+
+            expect(await source.get('a')).toEqual({ id: 'a', name: 'Alpha' })
+        })
+
+        test('a hook that throws its own BadRequest: `data` and `errors` arrive as it gave them', async () => {
+            app.use('checked', new MemoryService({ id: 'id' }))
+            app.service('checked').hooks({
+                before: {
+                    create: [
+                        async () => {
+                            throw new BadRequest('Invalid item', {
+                                errors: { name: 'is too short' },
+                                form: 'item',
+                            })
+                        },
+                    ],
+                },
+            })
+            const source = connection.recordSource<Item>('checked')
+            await connection.connect()
+
+            expect(source.create({ id: 'b', name: 'B' })).rejects.toMatchObject({
+                name: 'BadRequest',
+                code: 400,
+                message: 'Invalid item',
+                data: { form: 'item' },
+                errors: { name: 'is too short' },
+            })
+        })
     })
 
     test('listeners attached before connect() hear changes made by another client', async () => {

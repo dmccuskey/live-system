@@ -17,6 +17,7 @@
         "@feathersjs/authentication": "^5.0.50",
         "@feathersjs/authentication-local": "^5.0.50",
         "@feathersjs/memory": "^5.0.50",
+        "@feathersjs/schema": "^5.0.50",
         "@feathersjs/socketio": "^5.0.50"
     }
 }
