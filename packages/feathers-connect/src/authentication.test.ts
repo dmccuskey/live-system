@@ -553,6 +553,21 @@ describe('a login that is lost', () => {
         expect(heard.slice(3)).toEqual(['authenticated', 'reconnected'])
     })
 
+    test('a token given as the first login, at a data service that does not close the socket: the timer is set from that answer', async () => {
+        await startDataService({ expiresIn: '1s' })
+        app.removeAllListeners('disconnect')
+        const { accessToken } = await app.service('authentication').create(LOGIN)
+        const connection = connectionTo()
+        const heard = listenTo(connection)
+        await connection.connect()
+        await connection.authenticate({ strategy: 'jwt', accessToken })
+
+        await next(listener => connection.onAuthenticationLost(listener))
+
+        expect(connection.isConnected).toBe(true)
+        expect(heard).toEqual(['connected', 'authenticated', 'lost: The access token has expired'])
+    })
+
     test('after logout() no timer reports the token as run out', async () => {
         await startDataService({ expiresIn: '1s' })
         const connection = connectionTo()

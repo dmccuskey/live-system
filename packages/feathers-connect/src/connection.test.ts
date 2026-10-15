@@ -297,6 +297,23 @@ describe('a record source over the connection', () => {
         expect(source.get('0')).rejects.toMatchObject({ name: 'NotFound', code: 404 })
     })
 
+    test('a paginated service with number IDs: find() pages by the number, and update() and onRemoved take string IDs', async () => {
+        // After the first page a string `$gt: '1'` would find nothing more: the socket keeps the number
+        app.use('numbered', new MemoryService({ id: 'id', paginate: { default: 2, max: 2 } }))
+        const source = connection.recordSource<Item>('numbered')
+        const removed = next<Item>(listener => source.onRemoved(listener))
+        await connection.connect()
+
+        for (const name of ['A', 'B', 'C', 'D', 'E']) await source.create({ name })
+
+        expect((await source.find()).map(item => item.id)).toEqual(['0', '1', '2', '3', '4'])
+        expect(await source.update('3', { id: '3', name: 'D2' })).toEqual({ id: '3', name: 'D2' })
+
+        await source.remove('4')
+
+        expect(await removed).toEqual({ id: '4', name: 'E' })
+    })
+
     test('`convert` keeps a record as the service has it, an `id` of its own included', async () => {
         interface Envelope {
             id: string
