@@ -864,7 +864,7 @@ RecordSource
 
 `core` provides `MemoryRecordSource`, which keeps its records in memory and emits the same change events, for testing a manager without a data service. Its `disconnect()` and `reconnect()` stand in for a lost connection: changes made between the two emit no event.
 
-The `feathers-connect` package provides `FeathersRecordSource`, over one service of a `FeathersConnection` ([its README](../packages/feathers-connect/README.md)).
+The `feathers-connect` package provides `FeathersRecordSource`, over one service of a `FeathersConnection` ([its repository](https://github.com/dmccuskey/feathers-connect)).
 
 This allows the application architecture to remain independent of its storage technology.
 
@@ -1259,9 +1259,7 @@ The LiveSystem repository is a Bun workspace:
 live-system/
 │
 ├── packages/
-│   ├── live-system/           core, pinia, server and web entry points
-│   ├── micro-fsm/             the state machine behind the lifecycle
-│   └── feathers-connect/      the Feathers connection and record sources
+│   └── live-system/           core, pinia, server and web entry points
 │
 ├── examples/
 │   └── virtual-infrastructure/
@@ -1279,7 +1277,7 @@ live-system/
 | `server`    | the router and the `CommandServer`, which turns an HTTP request into a command                                                                                                   |
 | `web`       | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status                                                                                        |
 
-`micro-fsm` and `feathers-connect` start in this workspace and are built to move to repositories of their own.
+`micro-fsm` and `feathers-connect` began in this workspace and now have repositories of their own: [`@dmccuskey/micro-fsm`](https://github.com/dmccuskey/micro-fsm) and [`@dmccuskey/feathers-connect`](https://github.com/dmccuskey/feathers-connect). The workspace installs them from GitHub, at a tagged version.
 
 The demo consumes the actual LiveSystem packages rather than bypassing them with demo-specific implementations. It therefore serves as a continuous integration and architectural proving ground.
 

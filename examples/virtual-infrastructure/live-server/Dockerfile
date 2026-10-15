@@ -6,9 +6,7 @@ WORKDIR /app
 
 # The lockfile covers the whole workspace, so an install needs every workspace's package.json
 COPY package.json bun.lock ./
-COPY packages/feathers-connect/package.json packages/feathers-connect/
 COPY packages/live-system/package.json packages/live-system/
-COPY packages/micro-fsm/package.json packages/micro-fsm/
 COPY examples/virtual-infrastructure/data-service/package.json examples/virtual-infrastructure/data-service/
 COPY examples/virtual-infrastructure/live-server/package.json examples/virtual-infrastructure/live-server/
 COPY examples/virtual-infrastructure/protocol/package.json examples/virtual-infrastructure/protocol/

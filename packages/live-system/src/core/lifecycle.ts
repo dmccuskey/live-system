@@ -1,5 +1,5 @@
 // The lifecycle: its states, and the runner that takes a system through them.
-import { StateMachine } from 'micro-fsm'
+import { StateMachine } from '@dmccuskey/micro-fsm'
 
 export type LifecycleState = 'created' | 'ready' | 'initialized' | 'started' | 'running' | 'stopped'
 

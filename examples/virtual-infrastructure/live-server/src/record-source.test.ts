@@ -3,7 +3,7 @@
 import { expect, test } from 'bun:test'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
-import { FeathersConnection } from 'feathers-connect'
+import { FeathersConnection } from '@dmccuskey/feathers-connect'
 import type { RecordSource } from 'live-system/core'
 
 test('a Feathers record source satisfies RecordSource', () => {
