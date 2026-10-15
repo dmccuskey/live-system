@@ -169,19 +169,10 @@ describe('a record source over the connection', () => {
         expect(await source.get('b')).toEqual({ id: 'b', name: 'B' })
         expect(await source.patch('b', { name: 'B2' })).toEqual({ id: 'b', name: 'B2' })
         expect(await source.update('b', { id: 'b', name: 'B3' })).toEqual({ id: 'b', name: 'B3' })
-        expect(await source.find()).toEqual([created, { id: 'b', name: 'B3' }])
+        // find() returns the records in ID order, and the created one's ID is random
+        expect(await source.find()).toEqual([created, { id: 'b', name: 'B3' }].sort((x, y) => (x.id < y.id ? -1 : 1)))
         expect(await source.remove('b')).toEqual({ id: 'b', name: 'B3' })
         expect(await source.find()).toEqual([created])
-    })
-
-    test('find() takes the fixed query', async () => {
-        const source = connection.recordSource<Item>('items')
-        const onlyA = connection.recordSource<Item>('items', { query: { name: 'A' } })
-        await connection.connect()
-        await source.create({ id: 'a', name: 'A' })
-        await source.create({ id: 'b', name: 'B' })
-
-        expect(await onlyA.find()).toEqual([{ id: 'a', name: 'A' }])
     })
 
     test('find() returns every record of a paginated service, beyond its first page', async () => {
@@ -194,15 +185,29 @@ describe('a record source over the connection', () => {
         expect((await source.find()).map(item => item.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
     })
 
-    test('find() with a $limit in the fixed query returns that one page', async () => {
-        app.use('pages', new MemoryService({ id: 'id', paginate: { default: 2, max: 10 } }))
+    test('find() misses no record when records are removed and created while it reads', async () => {
+        app.use('pages', new MemoryService({ id: 'id', paginate: { default: 2, max: 2 } }))
+        const service = app.service('pages')
         const source = connection.recordSource<Item>('pages')
-        const firstThree = connection.recordSource<Item>('pages', { query: { $limit: 3 } })
         await connection.connect()
 
-        for (const id of ['a', 'b', 'c', 'd', 'e']) await source.create({ id, name: id.toUpperCase() })
+        for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) await source.create({ id, name: id.toUpperCase() })
 
-        expect((await firstThree.find()).map(item => item.id)).toEqual(['a', 'b', 'c'])
+        // After the first page, 'a' goes and 'aa' comes: by $skip, 'c' would be missed and a record read twice
+        let calls = 0
+        service.hooks({
+            after: {
+                find: [
+                    async () => {
+                        if (++calls !== 1) return
+                        await service.remove('a')
+                        await service.create({ id: 'aa', name: 'AA' })
+                    },
+                ],
+            },
+        })
+
+        expect((await source.find()).map(item => item.id)).toEqual(['a', 'b', 'c', 'd', 'e', 'f'])
     })
 
     test('findPage() reads one page of a paginated service, and its total', async () => {
@@ -253,8 +258,8 @@ describe('a record source over the connection', () => {
         expect(await source.findPage({ limit: 0 })).toEqual({ records: [], total: undefined, limit: 0, skip: 0 })
     })
 
-    test('a listener hears every change, whatever a findPage() call or the fixed query narrows to', async () => {
-        const source = connection.recordSource<Item>('items', { query: { name: 'A' } })
+    test('a listener hears every change, whatever a findPage() call narrows to', async () => {
+        const source = connection.recordSource<Item>('items')
         const heard: Item[] = []
         source.onCreated(record => heard.push(record))
         await connection.connect()

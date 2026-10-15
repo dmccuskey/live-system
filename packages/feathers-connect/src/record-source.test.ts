@@ -83,63 +83,46 @@ describe('find', () => {
         expect(await source.find()).toEqual([{ id: 'a', name: 'A' }])
     })
 
-    test('reads every page of a paginated service', async () => {
+    test('reads every page of a paginated service, each after the last ID read', async () => {
         const { service, source } = setup()
         service.results = [
             { total: 5, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] },
-            { total: 5, limit: 2, skip: 2, data: [{ id: 'c' }, { id: 'd' }] },
-            { total: 5, limit: 2, skip: 4, data: [{ id: 'e' }] },
+            { total: 3, limit: 2, skip: 0, data: [{ id: 'c' }, { id: 'd' }] },
+            { total: 1, limit: 2, skip: 0, data: [{ id: 'e' }] },
         ]
 
         expect((await source.find()).map(item => item.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
         expect(service.calls).toEqual([
-            ['find', undefined],
-            ['find', { query: { $skip: 2 } }],
-            ['find', { query: { $skip: 4 } }],
+            ['find', { query: { $sort: { id: 1 } } }],
+            ['find', { query: { $sort: { id: 1 }, id: { $gt: 'b' } } }],
+            ['find', { query: { $sort: { id: 1 }, id: { $gt: 'd' } } }],
         ])
     })
 
-    test('keeps the fixed query on every page', async () => {
-        const { service, source } = setup({ query: { kind: 'x' } })
+    test('misses no record when one already read is removed during the reading', async () => {
+        const { service, source } = setup()
+        // 'a' is removed after the first page: by $skip, the second page would begin at 'd' and miss 'c'
         service.results = [
-            { total: 2, limit: 1, skip: 0, data: [{ id: 'a' }] },
-            { total: 2, limit: 1, skip: 1, data: [{ id: 'b' }] },
-        ]
-        await source.find()
-
-        expect(service.calls).toEqual([
-            ['find', { query: { kind: 'x' } }],
-            ['find', { query: { kind: 'x', $skip: 1 } }],
-        ])
-    })
-
-    test('reads on from the $skip of the fixed query', async () => {
-        const { service, source } = setup({ query: { $skip: 1 } })
-        service.results = [
-            { total: 3, limit: 1, skip: 1, data: [{ id: 'b' }] },
-            { total: 3, limit: 1, skip: 2, data: [{ id: 'c' }] },
+            { total: 4, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] },
+            { total: 2, limit: 2, skip: 0, data: [{ id: 'c' }, { id: 'd' }] },
         ]
 
-        expect((await source.find()).map(item => item.id)).toEqual(['b', 'c'])
-        expect(service.calls).toEqual([
-            ['find', { query: { $skip: 1 } }],
-            ['find', { query: { $skip: 2 } }],
-        ])
+        expect((await source.find()).map(item => item.id)).toEqual(['a', 'b', 'c', 'd'])
     })
 
-    test('returns the one page of a query with its own $limit', async () => {
-        const { service, source } = setup({ query: { $limit: 2 } })
-        service.result = { total: 5, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] }
+    test('rejects when the service answers a page of records already read', async () => {
+        const { service, source } = setup({ path: 'items' })
+        // A service that ignores $gt answers the first page again
+        service.result = { total: 4, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] }
 
-        expect((await source.find()).map(item => item.id)).toEqual(['a', 'b'])
-        expect(service.calls).toHaveLength(1)
+        expect(source.find()).rejects.toThrow(/FeathersRecordSource 'items': a page repeated records already read/)
     })
 
     test('stops at an empty page, though the count says more', async () => {
         const { service, source } = setup()
         service.results = [
             { total: 3, limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] },
-            { total: 3, limit: 2, skip: 2, data: [] },
+            { total: 1, limit: 2, skip: 0, data: [] },
         ]
 
         expect((await source.find()).map(item => item.id)).toEqual(['a', 'b'])
@@ -150,24 +133,39 @@ describe('find', () => {
         const { service, source } = setup()
         service.results = [
             { limit: 2, skip: 0, data: [{ id: 'a' }, { id: 'b' }] },
-            { limit: 2, skip: 2, data: [{ id: 'c' }] },
+            { limit: 2, skip: 0, data: [{ id: 'c' }] },
         ]
 
         expect((await source.find()).map(item => item.id)).toEqual(['a', 'b', 'c'])
         expect(service.calls).toHaveLength(2)
     })
 
-    test('converts the ID field on every page', async () => {
+    test('sorts and pages by the backend ID field, and converts it on every page', async () => {
         const { service, source } = setup({ idField: '_id' })
         service.results = [
             { total: 2, limit: 1, skip: 0, data: [{ _id: 'a', name: 'A' }] },
-            { total: 2, limit: 1, skip: 1, data: [{ _id: 'b', name: 'B' }] },
+            { total: 1, limit: 1, skip: 0, data: [{ _id: 'b', name: 'B' }] },
         ]
 
         expect(await source.find()).toEqual([
             { id: 'a', name: 'A' },
             { id: 'b', name: 'B' },
         ])
+        expect(service.calls).toEqual([
+            ['find', { query: { $sort: { _id: 1 } } }],
+            ['find', { query: { $sort: { _id: 1 }, _id: { $gt: 'a' } } }],
+        ])
+    })
+
+    test('pages by the ID as the backend gives it: a number stays a number', async () => {
+        const { service, source } = setup()
+        service.results = [
+            { total: 2, limit: 1, skip: 0, data: [{ id: 1 }] },
+            { total: 1, limit: 1, skip: 0, data: [{ id: 2 }] },
+        ]
+
+        expect((await source.find()).map(item => item.id)).toEqual(['1', '2'])
+        expect(service.calls[1]).toEqual(['find', { query: { $sort: { id: 1 }, id: { $gt: 1 } } }])
     })
 
     test('returns a single record as an array of one', async () => {
@@ -177,20 +175,12 @@ describe('find', () => {
         expect(await source.find()).toEqual([{ id: 'a', name: 'A' }])
     })
 
-    test('passes no params without a query', async () => {
+    test('asks a service without pagination once, sorted by the ID', async () => {
         const { service, source } = setup()
         service.result = []
         await source.find()
 
-        expect(service.calls).toEqual([['find', undefined]])
-    })
-
-    test('passes the fixed query', async () => {
-        const { service, source } = setup({ query: { kind: 'x' } })
-        service.result = []
-        await source.find()
-
-        expect(service.calls).toEqual([['find', { query: { kind: 'x' } }]])
+        expect(service.calls).toEqual([['find', { query: { $sort: { id: 1 } } }]])
     })
 })
 
@@ -255,24 +245,6 @@ describe('findPage', () => {
         await source.findPage({ query: { $limit: 99, $skip: 99 }, limit: 5, skip: 1 })
 
         expect(service.calls).toEqual([['find', { query: { $limit: 5, $skip: 1 } }]])
-    })
-
-    test("merges the fixed query with the call's, which wins", async () => {
-        const { service, source } = setup({ query: { kind: 'x', color: 'red', $sort: { name: 1 } } })
-        service.result = { total: 0, limit: 5, skip: 0, data: [] }
-        await source.findPage({ query: { color: 'blue' }, limit: 5 })
-
-        expect(service.calls).toEqual([
-            ['find', { query: { kind: 'x', color: 'blue', $sort: { name: 1 }, $limit: 5, $skip: 0 } }],
-        ])
-    })
-
-    test('ignores a `$limit` and a `$skip` in the fixed query', async () => {
-        const { service, source } = setup({ query: { kind: 'x', $limit: 3, $skip: 7 } })
-        service.result = { total: 0, limit: 5, skip: 0, data: [] }
-        await source.findPage({ limit: 5 })
-
-        expect(service.calls).toEqual([['find', { query: { kind: 'x', $limit: 5, $skip: 0 } }]])
     })
 
     test('from a service that answers an array, the total is not known', async () => {
@@ -496,7 +468,7 @@ describe('number IDs', () => {
         const { service, source } = setup()
         service.results = [
             { total: 2, limit: 1, skip: 0, data: [{ id: 1, name: 'A' }] },
-            { total: 2, limit: 1, skip: 1, data: [{ id: 2, name: 'B' }] },
+            { total: 1, limit: 1, skip: 0, data: [{ id: 2, name: 'B' }] },
         ]
 
         expect((await source.find()).map(item => item.id)).toEqual(['1', '2'])
@@ -584,16 +556,23 @@ describe('convert', () => {
     })
 
     test('reads every page', async () => {
-        const { service, source } = setupEnvelope()
+        const { service, source } = setupEnvelope({ idField: '_id' })
         service.results = [
             { total: 2, limit: 1, skip: 0, data: [{ _id: 1 }] },
-            { total: 2, limit: 1, skip: 1, data: [{ _id: 2 }] },
+            { total: 1, limit: 1, skip: 0, data: [{ _id: 2 }] },
         ]
 
         expect(await source.find()).toEqual([
             { id: '1', raw: { _id: 1 } },
             { id: '2', raw: { _id: 2 } },
         ])
+    })
+
+    test('without `idField` over a backend whose ID field is not `id`, cannot page', async () => {
+        const { service, source } = setupEnvelope()
+        service.result = { total: 2, limit: 1, skip: 0, data: [{ _id: 1 }] }
+
+        expect(source.find()).rejects.toThrow(/has no ID field `id` to page by.*`idField`/)
     })
 
     test('reads the records of a page', async () => {
@@ -641,18 +620,25 @@ describe('convert', () => {
         ])
     })
 
-    test('keeps the fixed query', async () => {
-        const { service, source } = setupEnvelope({ query: { kind: 'x' } })
-        service.result = []
-        await source.find()
+    test('pages by the backend ID field that `idField` names', async () => {
+        const { service, source } = setupEnvelope({ idField: '_id' })
+        service.results = [
+            { total: 2, limit: 1, skip: 0, data: [{ _id: 1 }] },
+            { total: 1, limit: 1, skip: 0, data: [{ _id: 2 }] },
+        ]
 
-        expect(service.calls).toEqual([['find', { query: { kind: 'x' } }]])
+        expect((await source.find()).map(record => record.id)).toEqual(['1', '2'])
+        expect(service.calls).toEqual([
+            ['find', { query: { $sort: { _id: 1 } } }],
+            ['find', { query: { $sort: { _id: 1 }, _id: { $gt: 1 } } }],
+        ])
     })
 
-    test('is refused together with `idField`', () => {
-        expect(
-            () => new FeathersRecordSource<Envelope>(new FakeService(), { convert: envelope, idField: '_id' }),
-        ).toThrow(/`convert` or `idField`, not both/)
+    test('with `idField`, still makes the ID itself: the record keeps a field `id` of its own', async () => {
+        const { service, source } = setupEnvelope({ idField: '_id' })
+        service.result = { _id: 5, id: 'its own' }
+
+        expect(await source.get('5')).toEqual({ id: '5', raw: { _id: 5, id: 'its own' } })
     })
 
     test('what `read` throws rejects the call', async () => {

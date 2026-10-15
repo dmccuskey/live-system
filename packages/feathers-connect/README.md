@@ -278,36 +278,35 @@ For a data service that leaves the socket open, the connection has a timer of it
 
 ```ts
 connection.recordSource<Message>('messages')
-connection.recordSource<Message>('messages', { idField: '_id', query: { channel: 'general' } })
+connection.recordSource<Message>('messages', { idField: '_id' })
 ```
 
 Returns a [`FeathersRecordSource<T>`](#feathersrecordsource) over the service at `path`. The record type `T` must have a string `id`. The options:
 
-- `idField`: the backend's name for the record ID, when it is not `id`. Records come back with `id` instead of that field, and go out with that field instead of `id`.
-- `convert`: replaces the default conversion of a record, for a record type that is not the backend's record with its ID renamed. See [records and their IDs](#records-and-their-ids). Not together with `idField`: giving both throws.
-- `query`: a fixed Feathers query that every `find()` sends, for a source that covers only a part of the service's records. With a `$limit` of its own, `find()` returns that one page and reads no further.
+- `idField`: the backend's name for the record ID, when it is not `id`. Records come back with `id` instead of that field, and go out with that field instead of `id`. `find()` sorts and pages by it, see [paginated services](#paginated-services).
+- `convert`: replaces the default conversion of a record, for a record type that is not the backend's record with its ID renamed. See [records and their IDs](#records-and-their-ids). With `convert`, `idField` only names the backend's ID field for `find()`'s paging.
 - `onEventError`: called when the record of a change event cannot be converted, see [records and their IDs](#records-and-their-ids). Logs with `console.error` by default.
 
 Each call returns a new record source. They share the connection.
 
 ### service
 
-`connection.service(path)` returns the Feathers client's service, for what a record source does not offer, such as a `find` with its own query.
+`connection.service(path)` returns the Feathers client's service, for what a record source does not offer, such as every record that matches a query.
 
 ### FeathersRecordSource
 
-|                                                                                            |                                                                                                         |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `find(): Promise<T[]>`                                                                     | every record, or every record matching the fixed `query`, see [paginated services](#paginated-services) |
-| `findPage({ query?, limit, skip? }): Promise<RecordPage<T>>`                               | one page of the records and how many there are in all, see [one page at a time](#one-page-at-a-time)    |
-| `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                                              |
-| `isNotFound(error): boolean`                                                               | whether what a call rejected with is Feathers' `NotFound`: the record does not exist                    |
-| `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one                      |
-| `update(id, data): Promise<T>`                                                             | replaces a record                                                                                       |
-| `patch(id, data): Promise<T>`                                                              | changes some fields of a record                                                                         |
-| `remove(id): Promise<T>`                                                                   | removes a record and returns it                                                                         |
-| `onCreated(listener)`, `onUpdated(listener)`, `onPatched(listener)`, `onRemoved(listener)` | hear a change, made by any client; each returns a function that ends the subscription                   |
-| `onReconnected(listener)`                                                                  | hear the connection being made again after it was lost, see [onReconnected](#onreconnected)             |
+|                                                                                            |                                                                                                      |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `find(): Promise<T[]>`                                                                     | every record, in ID order, see [paginated services](#paginated-services)                             |
+| `findPage({ query?, limit, skip? }): Promise<RecordPage<T>>`                               | one page of the records and how many there are in all, see [one page at a time](#one-page-at-a-time) |
+| `get(id): Promise<T>`                                                                      | one record; rejects when it does not exist                                                           |
+| `isNotFound(error): boolean`                                                               | whether what a call rejected with is Feathers' `NotFound`: the record does not exist                 |
+| `create(data): Promise<T>`                                                                 | creates a record; `data` may leave out `id`, and the data service then assigns one                   |
+| `update(id, data): Promise<T>`                                                             | replaces a record                                                                                    |
+| `patch(id, data): Promise<T>`                                                              | changes some fields of a record                                                                      |
+| `remove(id): Promise<T>`                                                                   | removes a record and returns it                                                                      |
+| `onCreated(listener)`, `onUpdated(listener)`, `onPatched(listener)`, `onRemoved(listener)` | hear a change, made by any client; each returns a function that ends the subscription                |
+| `onReconnected(listener)`                                                                  | hear the connection being made again after it was lost, see [onReconnected](#onreconnected)          |
 
 A call that fails rejects with Feathers' error as it arrived: a missing record gives an error with the `name` `'NotFound'` and the `code` `404`.
 
@@ -342,16 +341,17 @@ await documents.patch('5', { raw: { title: 'New' } }) // sends { title: 'New' }
 - `read(backend)` makes a record of what the service gave. It is called for every record that comes in: from `find()` and `get()`, as the answer of a `create()`, `update()`, `patch()` or `remove()`, and with each change event. Its `id` must be a string, since nothing converts it afterwards.
 - `write(data)` makes what the service is sent, from the data of a `create()`, an `update()` or a `patch()`. For a patch it gets a part of a record, so it must not expect every field.
 - The IDs given to `get()`, `update()`, `patch()` and `remove()` go to the service as they are.
+- For a paginated service whose ID field is not `id`, give `idField` too: `find()` pages by the backend's ID field, which `convert` does not tell it. `idField` then names that field and nothing more: `read` still makes the ID.
 
 When a conversion fails, by the refusal above or by an error your `read` throws, a call rejects with that error. A change event has no caller to reject to, so the event is not delivered to its listeners, and `onEventError` is called with the error. By default that logs it with `console.error`, with the service's path. The record is then missing from what the listeners heard, until the records are read again.
 
 #### Paginated Services
 
-From a service that returns pages, `find()` reads one page after another, with `$skip`, until it has as many records as the service counts (`total`), and returns them as one array. A service that does not count is read until a page is not full. An empty page ends the reading in either case.
+From a service that returns pages, `find()` reads one page after another and returns them as one array. It sorts by the ID field (`$sort`), and asks for each page after the first by the IDs greater than the last one read (`$gt`), until a page holds every record its query counts (`total`). A service that does not count is read until a page is not full. An empty page ends the reading in either case. The records come in ID order, also from a service that does not paginate.
 
-The pages are separate calls, so the result is not a snapshot of one moment. A record created or removed while they are read is reported by its change event, as always. But a removal moves the records behind it up by one, so a record that did not change can be left out of the result, and a creation can put one in it twice.
+The pages are separate calls, so the result is not a snapshot of one moment. Since each page begins after an ID rather than at a position, a record created or removed while they are read does not move the others: every record that exists throughout the reading is in the result once. One created or removed meanwhile may be in it or not, and its change event reports it, as always.
 
-A fixed `query` with a `$limit` asks for that many records: `find()` then returns the one page and reads no further. A `$skip` in the fixed `query` is where the reading starts.
+This needs a service that knows `$sort` and `$gt` on its ID field, which every service on a Feathers database adapter does. A service with a query schema must list the ID field among its queryable properties (in `querySyntax`): otherwise it refuses the paging, and `find()` rejects with the server's `BadRequest`. If a page repeats records already read (a service that ignores `$gt`), or a record has no ID field to page by, `find()` rejects rather than read forever.
 
 #### One Page at a Time
 
@@ -368,11 +368,11 @@ page.records // up to 25 messages
 page.total // how many the query matches in all
 ```
 
-- `query`: a Feathers query for this call: fields to narrow by, and `$sort` and `$select`. Optional. On a record source with a fixed `query` the two are merged, and the call's wins where both have a field.
+- `query`: a Feathers query for this call: fields to narrow by, and `$sort` and `$select`. Optional.
 - `limit`: how many records at most. With 0 there are none, and the answer is the number of records alone.
 - `skip`: how many records to pass over first. Optional, 0 by default.
 
-`findPage()` sets `$limit` and `$skip` itself: one in the call's query, or in the fixed query, is ignored.
+`findPage()` sets `$limit` and `$skip` itself: one in the call's query is ignored.
 
 It resolves with:
 
@@ -390,7 +390,7 @@ It resolves with:
 
 So a `total` is the only sign that the service paged. Without one, `limit` and `skip` are the ones asked for, an empty `records` cannot be told from a query the service did not understand, and a `limit` of 0 counts nothing. `findPage()` does not guess which kind of service it has: an application that must know asks for the count first, and reads with `find()` where there is none.
 
-Like the pages `find()` reads, two pages are two calls: a record created or removed between them moves the records behind it.
+Two pages are two calls: a record created or removed between them moves the records behind it, since `findPage()` pages by position.
 
 #### Calls That Are Not Answered
 
@@ -406,7 +406,7 @@ A call made while the connection is away is held, and sent once the connection i
 
 A listener hears the changes the data service publishes to this connection, including those this client made itself. The same function subscribed twice is two subscriptions.
 
-The change events are never narrowed by a query: neither by the fixed `query` of the record source nor by the query of a `findPage()` call. A listener hears every change of the service that the data service publishes to this connection, also of a record no call of this source would return. Which changes those are is the data service's doing (its channels).
+The change events are never narrowed by a query: not by the query of a `findPage()` call. A listener hears every change of the service that the data service publishes to this connection, also of a record no call of this source would return. Which changes those are is the data service's doing (its channels).
 
 A record source can also be made directly, over any object with the Feathers service methods and `on` and `off` (the exported type `FeathersServiceLike`), which is how it is tested without a socket:
 
