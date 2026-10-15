@@ -7,7 +7,7 @@ import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/ma
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
-import { FeathersConnection } from 'feathers-connect'
+import { FeathersConnection } from '@dmccuskey/feathers-connect'
 import { createDataService, type DataService } from './app.ts'
 
 const alice: Omit<UserRecord, 'id'> = {

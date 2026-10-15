@@ -1,6 +1,6 @@
 // The web app's composition: the connection, the managers, the startup and the command sender.
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
-import { FeathersConnection } from 'feathers-connect'
+import { FeathersConnection } from '@dmccuskey/feathers-connect'
 import { LiveSystem } from 'live-system/core'
 import { CommandClient, WebStartup } from 'live-system/web'
 import type { Fetch, SystemStatus } from 'live-system/web'

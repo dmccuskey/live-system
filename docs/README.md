@@ -7,8 +7,8 @@ New to LiveSystem? Start with the [README](../README.md). The primitives these p
 - [Architecture](architecture.md): the primitives, the lifecycle, managers, live objects, record sources, commands and events, and the package structure
 - [Demo Architecture](architecture-demo.md): the Virtual Infrastructure Simulator, the demo application that proves the design
 - [Architecture Decisions](decisions/): the decision records (ADRs): why the design is what it is, and what was rejected
-- [Micro FSM](../packages/micro-fsm/README.md): the state machine behind the lifecycle, a package of its own: what it does and its reference
-- [Feathers Connect](../packages/feathers-connect/README.md): the connection to a Feathers data service and the record sources over its services, a package of its own: what it does and its reference
+- [Micro FSM](https://github.com/dmccuskey/micro-fsm): the state machine behind the lifecycle, in a repository of its own: what it does and its reference
+- [Feathers Connect](https://github.com/dmccuskey/feathers-connect): the connection to a Feathers data service and the record sources over its services, in a repository of its own: what it does and its reference
 
 ## Contribute
 
@@ -25,9 +25,7 @@ live-system/
 │   ├── development.md            # build, test, and possible future changes
 │   └── decisions/                # ADRs
 ├── packages/
-│   ├── live-system/              # the framework: core, server and web entry points
-│   ├── micro-fsm/                # the state machine behind the lifecycle
-│   └── feathers-connect/         # the Feathers connection and record sources
+│   └── live-system/              # the framework: core, server and web entry points
 ├── examples/
 │   └── virtual-infrastructure/   # the demo application
 │       ├── protocol/             # records, routes and commands, by domain

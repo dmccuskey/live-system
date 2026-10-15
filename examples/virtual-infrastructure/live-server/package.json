@@ -7,8 +7,8 @@
         "start": "bun src/main.ts"
     },
     "dependencies": {
+        "@dmccuskey/feathers-connect": "github:dmccuskey/feathers-connect#v0.1.0",
         "@virtual-infrastructure/protocol": "workspace:*",
-        "feathers-connect": "workspace:*",
         "live-system": "workspace:*",
         "pinia": "^4.0.3",
         "vue": "^3.5.43"

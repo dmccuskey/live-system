@@ -1,7 +1,7 @@
 // The live server's composition: the connection, the router, the managers and the command server.
 import type { DemoEvents } from '@virtual-infrastructure/protocol/events'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
-import { FeathersConnection } from 'feathers-connect'
+import { FeathersConnection } from '@dmccuskey/feathers-connect'
 import { EventBus, LiveSystem, scaledClock, systemClock } from 'live-system/core'
 import type { Clock } from 'live-system/core'
 import { CommandServer, Router } from 'live-system/server'

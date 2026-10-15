@@ -5,7 +5,7 @@ import { createAddServerCommand } from '@virtual-infrastructure/protocol/servers
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
 import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastructure/protocol/users/users.commands'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
-import { FeathersConnection } from 'feathers-connect'
+import { FeathersConnection } from '@dmccuskey/feathers-connect'
 import { createDataService, type DataService } from '../../data-service/src/app.ts'
 import { createLiveServer, type LiveServer } from '../../live-server/src/app.ts'
 import { createWebApp, type WebApp } from './app.ts'

@@ -17,7 +17,7 @@ router.handle({
 
 ## Status
 
-The primitives are implemented: the lifecycle over its state machine, [Micro FSM](packages/micro-fsm/README.md), managers and live objects, commands (the `Router`, the `CommandServer` and the `CommandClient`), the event bus, and data: record sources, the record store and the Feathers connection, [Feathers Connect](packages/feathers-connect/README.md). What is in place is listed under [Current Baseline](docs/development.md#current-baseline). The demo runs on all of it ([Running the Demo](docs/development.md#running-the-demo)). Nothing is a published API yet. The design is in [docs/architecture.md](docs/architecture.md).
+The primitives are implemented: the lifecycle over its state machine, [Micro FSM](https://github.com/dmccuskey/micro-fsm) (a repository of its own), managers and live objects, commands (the `Router`, the `CommandServer` and the `CommandClient`), the event bus, and data: record sources, the record store and the Feathers connection, [Feathers Connect](https://github.com/dmccuskey/feathers-connect) (a repository of its own). What is in place is listed under [Current Baseline](docs/development.md#current-baseline). The demo runs on all of it ([Running the Demo](docs/development.md#running-the-demo)). Nothing is a published API yet. The design is in [docs/architecture.md](docs/architecture.md).
 
 ## Primitives
 

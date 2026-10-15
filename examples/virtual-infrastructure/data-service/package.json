@@ -16,6 +16,6 @@
         "sift": "^17.1.3"
     },
     "devDependencies": {
-        "feathers-connect": "workspace:*"
+        "@dmccuskey/feathers-connect": "github:dmccuskey/feathers-connect#v0.1.0"
     }
 }

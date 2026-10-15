@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { LifecycleRunner } from 'live-system/core'
 import type { LifecycleOwner, LifecycleState } from 'live-system/core'
-import { TransitionError } from 'micro-fsm'
+import { TransitionError } from '@dmccuskey/micro-fsm'
 
 type Step = keyof LifecycleOwner
 
