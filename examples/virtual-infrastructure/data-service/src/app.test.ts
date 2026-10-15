@@ -140,16 +140,30 @@ describe('records', () => {
         expect(raw.find({ query: { $nope: 1 } })).rejects.toMatchObject({ name: 'BadRequest', code: 400 })
     })
 
-    test('a record source with a query reads the records it matches', async () => {
+    test('a query for one page reads the records it matches', async () => {
         const { port } = await start()
-        const connection = await connect(port)
-        const servers = connection.recordSource<ServerRecord>(SERVICES.servers)
-        const draining = connection.recordSource<ServerRecord>(SERVICES.servers, { query: { isDraining: true } })
+        const servers = (await connect(port)).recordSource<ServerRecord>(SERVICES.servers)
 
         await servers.create({ ...server1, id: 's1' })
         await servers.create({ ...server1, id: 's2', isDraining: true })
 
-        expect((await draining.find()).map(server => server.id)).toEqual(['s2'])
+        const page = await servers.findPage({ query: { isDraining: true }, limit: 10 })
+
+        expect(page.records.map(server => server.id)).toEqual(['s2'])
+    })
+
+    test('answers the query a record source pages by: sorted by the ID, after an ID', async () => {
+        const { port } = await start()
+        const connection = await connect(port)
+        const servers = connection.recordSource<ServerRecord>(SERVICES.servers)
+
+        for (const id of ['s3', 's1', 's2']) await servers.create({ ...server1, id })
+
+        const raw = connection.service(SERVICES.servers)
+        const after = (await raw.find({ query: { $sort: { id: 1 }, id: { $gt: 's1' } } })) as { data: ServerRecord[] }
+
+        expect(after.data.map(server => server.id)).toEqual(['s2', 's3'])
+        expect((await servers.find()).map(server => server.id)).toEqual(['s1', 's2', 's3'])
     })
 
     test('users and servers are kept apart', async () => {

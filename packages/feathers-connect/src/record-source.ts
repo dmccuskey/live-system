@@ -28,10 +28,7 @@ type FindResult = BackendRecord | BackendRecord[] | Page
 
 /** What `findPage` is asked for. */
 export interface FindPageOptions {
-    /**
-     * A Feathers query for this call: fields to narrow by, `$sort`, `$select`.
-     * It is merged with the source's fixed query, and wins where both have a field.
-     */
+    /** A Feathers query for this call: fields to narrow by, `$sort`, `$select`. */
     query?: Record<string, unknown>
     /** How many records at most. With 0, none: the answer is then the number of records alone. */
     limit: number
@@ -87,11 +84,14 @@ export interface RecordConversion<T extends HasId> {
 export interface FeathersRecordSourceOptions<T extends HasId = HasId> {
     /**
      * The backend's name for the record ID, when it is not `id` (for example
-     * `_id`). A backend record that has a field `id` of its own beside it is
-     * refused: use `convert` for such a service.
+     * `_id`). `find()` sorts and pages by it. A backend record that has a field
+     * `id` of its own beside it is refused: use `convert` for such a service.
      */
     idField?: string
-    /** Replaces the default conversion. Not together with `idField`. */
+    /**
+     * Replaces the default conversion. With it, `idField` only names the
+     * backend's ID field for `find()`'s paging: `convert` makes the ID itself.
+     */
     convert?: RecordConversion<T>
     /**
      * Called when the record of a change event cannot be converted, with what
@@ -101,12 +101,6 @@ export interface FeathersRecordSourceOptions<T extends HasId = HasId> {
     onEventError?: (error: unknown) => void
     /** The service's path, for the source's own messages. `connection.recordSource()` supplies it. */
     path?: string
-    /**
-     * A fixed query for `find`, when the source covers only a part of the
-     * service's records. With a `$limit` of its own, `find` returns that one
-     * page and reads no further.
-     */
-    query?: Record<string, unknown>
     /**
      * How the source hears that the connection was made again after a lost
      * one. `connection.recordSource()` supplies it. Without it, the source's
@@ -125,22 +119,18 @@ export class FeathersRecordSource<T extends HasId> {
     #service: FeathersServiceLike
     #idField: string
     #convert: RecordConversion<T> | undefined
-    #query: Record<string, unknown> | undefined
     #onReconnected: ((listener: () => void) => Unsubscribe) | undefined
     #onEventError: (error: unknown) => void
+    #name: string
 
     constructor(service: FeathersServiceLike, options: FeathersRecordSourceOptions<T> = {}) {
-        if (options.convert && options.idField !== undefined) {
-            throw new Error('A record source takes `convert` or `idField`, not both: `convert` decides the ID itself')
-        }
-
         this.#service = service
         this.#idField = options.idField ?? 'id'
         this.#convert = options.convert
-        this.#query = options.query
         this.#onReconnected = options.onReconnected
 
         const name = options.path === undefined ? 'FeathersRecordSource' : `FeathersRecordSource '${options.path}'`
+        this.#name = name
 
         this.#onEventError =
             options.onEventError ??
@@ -150,29 +140,50 @@ export class FeathersRecordSource<T extends HasId> {
 
     /**
      * Every record, as an array, whether the service returns pages, an array
-     * or a single record. From a paginated service it reads page after page.
+     * or a single record. From a paginated service it reads page after page,
+     * sorted by the ID and each page after the IDs read so far, so a record
+     * created or removed meanwhile does not shift the pages: every record that
+     * exists throughout the reading is read once. The records come in ID order.
      */
     async find(): Promise<T[]> {
-        const first = (await this.#service.find(this.#query ? { query: this.#query } : undefined)) as FindResult
+        const sort = { $sort: { [this.#idField]: 1 } }
+        const first = (await this.#service.find({ query: sort })) as FindResult
 
         if (!isPage(first)) return toArray(first).map(record => this.#toRecord(record))
 
         const records = [...first.data]
+        const read = new Set(records.map(record => record[this.#idField]))
+        let page = first
 
-        // A query with a $limit of its own asks for that many: its one page is the answer
-        if (this.#query?.$limit === undefined) {
-            const start = Number(this.#query?.$skip ?? 0)
-            let page = first
+        while (hasMore(page)) {
+            const last = records[records.length - 1]![this.#idField]
 
-            while (hasMore(page, start + records.length)) {
-                const next = (await this.#service.find({
-                    query: { ...this.#query, $skip: start + records.length },
-                })) as FindResult
+            if (last === undefined || last === null) {
+                throw new Error(
+                    `${this.#name}: a record has no ID field \`${this.#idField}\` to page by. With \`convert\`, ` +
+                        `name the backend's ID field with \`idField\`.`,
+                )
+            }
 
-                if (!isPage(next)) break
+            const next = (await this.#service.find({
+                query: { ...sort, [this.#idField]: { $gt: last } },
+            })) as FindResult
 
-                page = next
-                records.push(...page.data)
+            if (!isPage(next)) break
+
+            // A service that ignores $gt answers the same page again, and would never end
+            if (next.data.some(record => read.has(record[this.#idField]))) {
+                throw new Error(
+                    `${this.#name}: a page repeated records already read. find() pages by \`$sort\` and \`$gt\` ` +
+                        `on the ID field \`${this.#idField}\`, which the service must know.`,
+                )
+            }
+
+            page = next
+
+            for (const record of page.data) {
+                records.push(record)
+                read.add(record[this.#idField])
             }
         }
 
@@ -187,11 +198,9 @@ export class FeathersRecordSource<T extends HasId> {
      * its own: only a `total` in the answer says that the service paged.
      */
     async findPage(options: FindPageOptions): Promise<RecordPage<T>> {
-        // The fixed query's own $limit and $skip are for find()
-        const { $limit: _limit, $skip: _skip, ...fixed } = this.#query ?? {}
         const skip = options.skip ?? 0
         const result = (await this.#service.find({
-            query: { ...fixed, ...options.query, $limit: options.limit, $skip: skip },
+            query: { ...options.query, $limit: options.limit, $skip: skip },
         })) as FindResult
 
         if (!isPage(result)) {
@@ -326,12 +335,13 @@ function isPage(result: FindResult): result is Page {
 }
 
 /**
- * Whether records follow a page, `read` being how far into the service's
- * records the pages so far reach. An empty page always ends the reading.
+ * Whether records follow a page. Each page is the first of what its query
+ * matches, so its `total` counts it and what comes after it. An empty page
+ * always ends the reading.
  */
-function hasMore(page: Page, read: number): boolean {
+function hasMore(page: Page): boolean {
     if (page.data.length === 0) return false
-    if (typeof page.total === 'number') return read < page.total
+    if (typeof page.total === 'number') return page.data.length < page.total
 
     // Without a count, a full page may have another behind it
     return typeof page.limit === 'number' && page.data.length >= page.limit
