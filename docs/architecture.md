@@ -793,6 +793,8 @@ An object starts in step with its manager. `LiveObject` has `init()`, `start()` 
 - **During startup**, the records are loaded in the manager's `init()`, an object is created for each, and each object's `init()` is awaited. The manager's `start()` awaits each object's `start()`, and its `run()` each object's `run()`. So every object of every manager is initialized before any is started, and no object acts on its own before the system is running.
 - **While the system runs**, the object for a new record is taken through `init()`, `start()` and `run()`, one after the other.
 
+At most `concurrency` of these steps run at once, 50 by default, across every object of the manager, so thousands of objects do not all read from the data service together. The others wait their turn in the order they came, and the objects of records created later share the same limit. A manager sets its own by overriding the field (`protected override readonly concurrency = 20`); `Infinity` runs every step together. A step that waits for another object of the same manager to end a step can wait forever once every slot is taken.
+
 An object whose step fails is destroyed and reported to the manager's `objectFailed(object, error)`, which logs by default. The other objects are not affected.
 
 The object performs its own cleanup. `LiveObject`, the base class, provides `destroy()`: it does nothing the second time it is called, calls the object's `release()`, and then tells the owner through `onDestroyed`. The object says what there is to release:

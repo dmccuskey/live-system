@@ -20,6 +20,8 @@ interface Behavior {
     failIn?: 'init' | 'start' | 'run'
     /** Makes init() wait until it resolves. */
     initGate?: Promise<void>
+    /** init() writes the object's ID here as it begins, before its gate. */
+    begun?: string[]
     failInRelease?: boolean
 }
 
@@ -46,6 +48,7 @@ class Thing extends LiveObject {
     }
 
     override async init(): Promise<void> {
+        this.behavior.begun?.push(this.id)
         await this.behavior.initGate
         this.#step('init')
     }
@@ -100,6 +103,39 @@ async function boot(manager: ThingManager): Promise<void> {
     await manager.init()
     await manager.start()
     await manager.run()
+}
+
+// A manager with its own limit on the steps that run at once
+class LimitedManager extends ThingManager {
+    protected override readonly concurrency: number
+
+    constructor(concurrency: number, source: RecordSource<Item>, store: RecordStore<Item>) {
+        super(undefined, source, store)
+        this.concurrency = concurrency
+    }
+}
+
+// Records a, b, c… for a manager limited to `concurrency` (by default its own), each init() held by a gate of its own
+function setupLimited(concurrency: number | undefined, count: number) {
+    const records = Array.from({ length: count }, (_, i) => ({ id: String.fromCharCode(97 + i), name: `item ${i}` }))
+    const source = new MemoryRecordSource<Item>(records)
+    const store = defineRecordStore<Item>('items')(createPinia())
+    const manager =
+        concurrency === undefined
+            ? new ThingManager(undefined, source, store)
+            : new LimitedManager(concurrency, source, store)
+    const begun: string[] = []
+    const gates = new Map<string, () => void>()
+
+    for (const { id } of records) {
+        const { promise, resolve } = Promise.withResolvers<void>()
+        manager.behavior[id] = { initGate: promise, begun }
+        gates.set(id, resolve)
+    }
+
+    const open = (...ids: string[]) => ids.forEach(id => gates.get(id)?.())
+
+    return { source, store, manager, begun, open }
 }
 
 // Lets the promises already resolved run their continuations
@@ -546,5 +582,148 @@ describe('after a reconnect', () => {
         await settle()
 
         expect(manager.log).toEqual(['a:release', 'c:created', 'c:init', 'c:start', 'c:run'])
+    })
+})
+
+describe('a limit on the steps that run at once', () => {
+    test('at most that many run, and the others begin in order as slots free up', async () => {
+        const { manager, begun, open } = setupLimited(2, 5)
+
+        const init = manager.init()
+        await settle()
+
+        expect(begun).toEqual(['a', 'b'])
+
+        open('b')
+        await settle()
+
+        expect(begun).toEqual(['a', 'b', 'c'])
+
+        open('a', 'c')
+        await settle()
+
+        expect(begun).toEqual(['a', 'b', 'c', 'd', 'e'])
+
+        open('d', 'e')
+        await init
+
+        expect(manager.log.filter(entry => entry.endsWith(':init'))).toEqual([
+            'b:init',
+            'a:init',
+            'c:init',
+            'd:init',
+            'e:init',
+        ])
+    })
+
+    test('the default is 50', async () => {
+        const { manager, begun, open } = setupLimited(undefined, 60)
+
+        const init = manager.init()
+        await settle()
+
+        expect(begun.length).toBe(50)
+
+        open(...begun)
+        await settle()
+
+        expect(begun.length).toBe(60)
+
+        open(...begun)
+        await init
+    })
+
+    test('Infinity runs them all together', async () => {
+        const { manager, begun, open } = setupLimited(Infinity, 3)
+
+        const init = manager.init()
+        await settle()
+
+        expect(begun).toEqual(['a', 'b', 'c'])
+
+        open('a', 'b', 'c')
+        await init
+    })
+
+    test('a step that fails frees its slot', async () => {
+        const { source, store } = setup()
+        await source.create(first)
+        await source.create(second)
+        const manager = new LimitedManager(1, source, store)
+        manager.behavior.a = { failIn: 'init' }
+
+        await boot(manager)
+
+        expect(manager.failures).toEqual([['a', new Error('a failed in init')]])
+        expect(manager.log).toEqual(['a:created', 'b:created', 'a:init', 'a:release', 'b:init', 'b:start', 'b:run'])
+    })
+
+    test('an object destroyed while it waits gives up its place', async () => {
+        const { source, manager, begun, open } = setupLimited(1, 3)
+
+        const init = manager.init()
+        await settle()
+        await source.remove('b')
+        open('a')
+        await settle()
+
+        expect(begun).toEqual(['a', 'c'])
+
+        open('c')
+        await init
+
+        expect([...manager.objects.keys()]).toEqual(['a', 'c'])
+        expect(manager.log).not.toContain('b:init')
+    })
+
+    test('the objects of records created later share the limit', async () => {
+        const { source, store } = setup()
+        const manager = new LimitedManager(1, source, store)
+        const begun: string[] = []
+        const { promise, resolve } = Promise.withResolvers<void>()
+        manager.behavior.a = { initGate: promise, begun }
+        manager.behavior.b = { begun }
+        await boot(manager)
+
+        await source.create(first)
+        await source.create(second)
+        await settle()
+
+        expect(begun).toEqual(['a'])
+        expect(manager.log).toEqual(['a:created', 'b:created'])
+
+        resolve()
+        await settle()
+
+        expect(manager.log).toEqual([
+            'a:created',
+            'b:created',
+            'a:init',
+            'b:init',
+            'a:start',
+            'b:start',
+            'a:run',
+            'b:run',
+        ])
+    })
+
+    test('stop() while steps wait: the waiting ones never run', async () => {
+        const { manager, begun, open } = setupLimited(1, 2)
+
+        const init = manager.init()
+        await settle()
+        await manager.stop()
+        open('a')
+        await init
+
+        expect(begun).toEqual(['a'])
+        expect(manager.log).not.toContain('b:init')
+        expect(manager.objects.size).toBe(0)
+    })
+
+    test('a limit below 1 fails init()', async () => {
+        const { manager } = setupLimited(0, 1)
+
+        expect(manager.init()).rejects.toThrow('LimitedManager: concurrency must be at least 1, not 0')
     })
 })
