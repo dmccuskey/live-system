@@ -501,6 +501,12 @@ A manager whose records each have a live object extends `LiveObjectManager<T, O>
 
 Managers should not assume that the application uses Feathers, SQLite, HTTP, or any other particular technology for its data or transport.
 
+### Every Record Loaded and Hydrated
+
+A `DataManager` loads every record of its kind, always, and a `LiveObjectManager` hydrates each one into its live object. Its store mirrors the whole of its record source, never a part of it: nothing filters what comes into it.
+
+A field that says a record is out of play, such as `active: false`, is the live object's to act on: the object stays, and does nothing while the record is inactive. Leaving the record out instead would mean working out how to bring it back, and hydrate its object again, when the field changes back to `active: true`. And a record source's change events are not narrowed to a part of its records, so a store meant to hold a part would take in the rest as it changes.
+
 ### A Record per Manager
 
 Some data describes a manager, not a thing the application has many of: what a user has set for it, and what it reports of itself. That data is the manager's own record, a **manager record**, and it follows these rules:
@@ -836,6 +842,8 @@ interface RecordSource<T extends { id: string }> {
 ```
 
 A record has a string `id`. A record to create may leave it out, and the source then assigns one, as Feathers does.
+
+`find` returns every record of the kind, however the backend serves them: from a paginated service it reads every page (see [Every Record Loaded and Hydrated](#every-record-loaded-and-hydrated)).
 
 `get` rejects when the record does not exist, and `isNotFound(error)` says whether what a call rejected with means that. Any other failure, such as a lost connection, says nothing of the record.
 
