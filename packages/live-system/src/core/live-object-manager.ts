@@ -14,6 +14,10 @@ const steps: Step[] = [object => object.init(), object => object.start(), object
  * object goes through the manager's phases with it: `init()`, `start()` and
  * `run()`. One created later is taken through every phase its manager has
  * reached, one after the other.
+ *
+ * At most `concurrency` of these steps run at once, across every object of
+ * the manager, so thousands of objects do not all read from the data service
+ * together. The others wait their turn, in the order they came.
  */
 export abstract class LiveObjectManager<T extends HasId, O extends LiveObject, C = unknown> extends DataManager<T, C> {
     #objects = new Map<string, O>()
@@ -21,6 +25,17 @@ export abstract class LiveObjectManager<T extends HasId, O extends LiveObject, C
     #reached = 0
     // Each object's steps so far, so its next one waits for them
     #progress = new Map<O, Promise<void>>()
+    // How many steps run now, and the steps waiting for one of them to end
+    #running = 0
+    #waiting: (() => void)[] = []
+
+    /**
+     * How many steps (`init()`, `start()`, `run()`) of its objects run at once,
+     * at least 1. `Infinity` runs them all together. A subclass sets its own
+     * by overriding the field. A step that waits for another object of the
+     * same manager to end a step can wait forever once every slot is taken.
+     */
+    protected readonly concurrency: number = 50
 
     /** The live objects, by their record's ID. */
     get objects(): ReadonlyMap<string, O> {
@@ -33,6 +48,9 @@ export abstract class LiveObjectManager<T extends HasId, O extends LiveObject, C
 
     /** Loads the records, creates their objects and awaits each object's `init()`. */
     override async init(): Promise<void> {
+        if (!(this.concurrency >= 1))
+            throw new RangeError(`${this.constructor.name}: concurrency must be at least 1, not ${this.concurrency}`)
+
         await super.init()
         await this.#reach(1)
     }
@@ -114,14 +132,20 @@ export abstract class LiveObjectManager<T extends HasId, O extends LiveObject, C
         await Promise.all([...this.#objects.values()].map(object => this.#advance(object, step)))
     }
 
-    // Runs a step of an object after its earlier ones. A step that fails ends the object, not the manager.
+    // Runs a step of an object after its earlier ones, once a slot is free. A step that fails ends the object, not the manager.
     #advance(object: O, step: Step): Promise<void> {
         const earlier = this.#progress.get(object) ?? Promise.resolve()
 
         const done = earlier.then(async () => {
             if (object.isDestroyed) return
 
+            // A free slot is taken at once, so a step begins as early as it did without a limit
+            if (!this.#take()) await new Promise<void>(resolve => this.#waiting.push(resolve))
+
             try {
+                // Destroyed while it waited: it gives its slot on
+                if (object.isDestroyed) return
+
                 await step(object)
             } catch (error) {
                 try {
@@ -129,6 +153,8 @@ export abstract class LiveObjectManager<T extends HasId, O extends LiveObject, C
                 } finally {
                     this.objectFailed(object, error)
                 }
+            } finally {
+                this.#release()
             }
         })
 
@@ -139,5 +165,21 @@ export abstract class LiveObjectManager<T extends HasId, O extends LiveObject, C
             )
 
         return done
+    }
+
+    // Takes a slot if one is free
+    #take(): boolean {
+        if (this.#running >= this.concurrency) return false
+
+        this.#running++
+        return true
+    }
+
+    // Hands the slot to the first step waiting, or frees it
+    #release(): void {
+        const next = this.#waiting.shift()
+
+        if (next) next()
+        else this.#running--
     }
 }
