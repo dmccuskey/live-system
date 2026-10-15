@@ -14,7 +14,8 @@ import {
     type CommandType,
 } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
-import { defineRecordStore, MemoryRecordSource } from 'live-system/core'
+import { MemoryRecordSource } from 'live-system/core'
+import { defineRecordStore } from 'live-system/pinia'
 import type { CommandResponse, FakeClock, LiveSystem } from 'live-system/core'
 import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'

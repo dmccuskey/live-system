@@ -83,9 +83,17 @@
       "version": "0.0.0",
       "dependencies": {
         "micro-fsm": "workspace:*",
-        "pinia": "^4.0.3",
         "vue": "^3.5.43",
       },
+      "devDependencies": {
+        "pinia": "^4.0.3",
+      },
+      "peerDependencies": {
+        "pinia": "^4.0.3",
+      },
+      "optionalPeers": [
+        "pinia",
+      ],
     },
     "packages/micro-fsm": {
       "name": "micro-fsm",

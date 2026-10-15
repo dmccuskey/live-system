@@ -6,12 +6,23 @@
     "type": "module",
     "exports": {
         "./core": "./src/core/index.ts",
+        "./pinia": "./src/pinia/index.ts",
         "./server": "./src/server/index.ts",
         "./web": "./src/web/index.ts"
     },
     "dependencies": {
         "micro-fsm": "workspace:*",
-        "pinia": "^4.0.3",
         "vue": "^3.5.43"
+    },
+    "peerDependencies": {
+        "pinia": "^4.0.3"
+    },
+    "peerDependenciesMeta": {
+        "pinia": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "pinia": "^4.0.3"
     }
 }

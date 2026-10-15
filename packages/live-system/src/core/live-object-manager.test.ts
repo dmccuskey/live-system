@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { defineRecordStore, LiveObject, LiveObjectManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
+import { LiveObject, LiveObjectManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
+import { defineRecordStore } from 'live-system/pinia'
 import type { LiveObjectOptions, RecordSource, RecordStore } from 'live-system/core'
 import { createPinia } from 'pinia'
 

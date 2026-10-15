@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { DataManager, defineRecordStore, LiveSystem, MemoryRecordSource } from 'live-system/core'
+import { DataManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
+import { defineRecordStore } from 'live-system/pinia'
 import { WebStartup } from 'live-system/web'
 import type { SystemPhase } from 'live-system/web'
 import { createPinia } from 'pinia'

@@ -897,9 +897,11 @@ On the server, reactivity communicates data changes: a manager or a live object 
 
 In a web application, Vue is used in the standard way: the same reactive state also drives components, which render the UI.
 
-The store is [Pinia](https://pinia.vuejs.org), on the server as on the web: Pinia needs no Vue app. Each kind of record has a store of its own, defined in one line:
+The store is [Pinia](https://pinia.vuejs.org), on the server as on the web: Pinia needs no Vue app. Each kind of record has a store of its own, defined in one line with `defineRecordStore` from `live-system/pinia`:
 
 ```ts
+import { defineRecordStore } from 'live-system/pinia'
+
 const useServerStore = defineRecordStore<ServerRecord>(SERVICES.servers)
 
 const servers = useServerStore(pinia)
@@ -909,6 +911,8 @@ servers.get('42') // one record, or undefined
 ```
 
 Only the `DataManager` for those records writes to the store. Everything else reads, and what reads inside a `computed` or a `watch` reacts when the record is replaced. A record is replaced whole when it changes, never changed in place.
+
+A `DataManager` needs only the `RecordStore` interface from `core`: `records`, `load()`, `set()`, `remove()` and `get()`. Pinia sits on a subpath of its own and is an optional peer dependency, so an app may bring its own `RecordStore`, over a `shallowReactive` for example, and import `core` without Pinia.
 
 An object whose record changes faster than is worth writing can collect its updates with `debouncePatch`, which merges them and writes once after a quiet delay. It is opt-in: by default an update is written as it happens. Its delay runs on real time, or on the [clock](#time) it is given.
 
@@ -1245,7 +1249,7 @@ The LiveSystem repository is a Bun workspace:
 live-system/
 │
 ├── packages/
-│   ├── live-system/           core, server and web entry points
+│   ├── live-system/           core, pinia, server and web entry points
 │   ├── micro-fsm/             the state machine behind the lifecycle
 │   └── feathers-connect/      the Feathers connection and record sources
 │
@@ -1256,13 +1260,14 @@ live-system/
 └── README.md
 ```
 
-`live-system` is one package with three entry points:
+`live-system` is one package with four entry points:
 
-| Entry point | Holds                                                                                                                                                                 |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core`      | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the record store, the optional event bus, the clock |
-| `server`    | the router and the `CommandServer`, which turns an HTTP request into a command                                                                                        |
-| `web`       | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status                                                                             |
+| Entry point | Holds                                                                                                                                                                            |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core`      | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the `RecordStore` interface, the optional event bus, the clock |
+| `pinia`     | `defineRecordStore`, the record store as a Pinia store. Pinia is an optional peer dependency, imported only here                                                                 |
+| `server`    | the router and the `CommandServer`, which turns an HTTP request into a command                                                                                                   |
+| `web`       | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status                                                                                        |
 
 `micro-fsm` and `feathers-connect` start in this workspace and are built to move to repositories of their own.
 

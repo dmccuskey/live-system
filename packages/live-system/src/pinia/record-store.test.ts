@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { defineRecordStore } from 'live-system/core'
+import { defineRecordStore } from 'live-system/pinia'
 import { createPinia } from 'pinia'
 import { computed, watch } from 'vue'
 
