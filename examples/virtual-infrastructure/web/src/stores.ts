@@ -3,7 +3,7 @@ import type { ManagerRecord } from '@virtual-infrastructure/protocol/managers/ma
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { SERVICES } from '@virtual-infrastructure/protocol/services'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
-import { defineRecordStore } from 'live-system/core'
+import { defineRecordStore } from 'live-system/pinia'
 
 // In a component each is called without an argument. Only the manager of a kind of record writes to its store.
 export const useUserStore = defineRecordStore<UserRecord>(SERVICES.users)

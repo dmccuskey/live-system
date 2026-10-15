@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { DataManager, defineRecordStore, LiveSystem, MemoryRecordSource } from 'live-system/core'
+import { DataManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
+import { defineRecordStore } from 'live-system/pinia'
 import type { RecordStore } from 'live-system/core'
 import { createPinia } from 'pinia'
 import { watch } from 'vue'
