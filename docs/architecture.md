@@ -757,6 +757,8 @@ Each timer returns the function that cancels it, which its owner calls at the en
 
 The clock is opt-in, and it is there for the tests: nothing in LiveSystem asks for one or passes one around. An application that wants one puts it in its context, where its managers and live objects find it. With a `FakeClock` there, a test of behavior over time waits for nothing and does not depend on how fast its process runs ([Development](development.md#time-in-tests)).
 
+A clock measures time; it does not tell the time of day. `systemClock.now()` is `performance.now()`, which counts from when the process started, so it is no use for a timestamp that a record holds or a UI shows. Such a timestamp comes from `Date.now()`, or from a function of the application's own beside the clock in its context (`date: () => Date.now()`), which a test can replace in the same way.
+
 ### Roles
 
 "Live object" says what the thing is. What it is for is usually one of two roles:

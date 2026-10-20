@@ -1,9 +1,22 @@
 {
     "name": "live-system",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "description": "A lightweight framework for applications whose state and behavior remain alive over time",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/dmccuskey/live-system.git",
+        "directory": "packages/live-system"
+    },
+    "homepage": "https://github.com/dmccuskey/live-system/tree/main/packages/live-system#readme",
+    "bugs": "https://github.com/dmccuskey/live-system/issues",
     "type": "module",
+    "files": [
+        "src",
+        "CHANGELOG.md",
+        "!src/**/*.test.ts",
+        "!src/**/*.contract.ts"
+    ],
     "exports": {
         "./core": "./src/core/index.ts",
         "./pinia": "./src/pinia/index.ts",
