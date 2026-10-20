@@ -1,9 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { DataManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
-import { defineRecordStore } from 'live-system/pinia'
+import { createRecordStore, DataManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
 import type { RecordStore } from 'live-system/core'
-import { createPinia } from 'pinia'
-import { watch } from 'vue'
+import { watch } from '@vue/reactivity'
 
 interface Item {
     id: string
@@ -96,7 +94,7 @@ class GatedSource extends MemoryRecordSource<Item> {
 
 function setup(records: Item[] = []) {
     const source = new GatedSource(records)
-    const store: RecordStore<Item> = defineRecordStore<Item>('items')(createPinia())
+    const store: RecordStore<Item> = createRecordStore<Item>()
     const manager = new ItemManager(undefined, source, store)
 
     return { source, store, manager }
@@ -150,7 +148,6 @@ describe('init(): the startup sync', () => {
         const stop = watch(
             () => Object.keys(store.records),
             () => (changes += 1),
-            { flush: 'sync' },
         )
 
         await manager.init()
@@ -521,7 +518,6 @@ describe('resync: after the source was lost and is back', () => {
         watch(
             () => ({ ...store.records }),
             () => (reactions += 1),
-            { flush: 'sync' },
         )
 
         source.reconnect()
@@ -685,7 +681,7 @@ describe('resync: after the source was lost and is back', () => {
     test('the default report of a failed resync is a console.error', async () => {
         class PlainManager extends DataManager<Item> {}
         const source = new GatedSource([first])
-        const manager = new PlainManager(undefined, source, defineRecordStore<Item>('items')(createPinia()))
+        const manager = new PlainManager(undefined, source, createRecordStore<Item>())
         const error = spyOn(console, 'error').mockImplementation(() => {})
 
         try {
@@ -808,7 +804,7 @@ describe('stop()', () => {
 describe('in a LiveSystem', () => {
     test('boot() loads the store, and shutdown() ends the subscriptions', async () => {
         const source = new GatedSource([first, second])
-        const store = defineRecordStore<Item>('items')(createPinia())
+        const store = createRecordStore<Item>()
         const system = new LiveSystem({ context: { store } })
         system.addManager(context => new ItemManager(context, source, context.store))
 
@@ -824,7 +820,7 @@ describe('in a LiveSystem', () => {
     test('a failed load fails the boot and leaves no subscription', async () => {
         const source = new GatedSource([first])
         source.findGate = Promise.reject(new Error('no connection'))
-        const store = defineRecordStore<Item>('items')(createPinia())
+        const store = createRecordStore<Item>()
         const system = new LiveSystem({ context: {} })
         system.addManager(context => new ItemManager(context, source, store))
 

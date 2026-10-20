@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { COMMAND_TYPES } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
 import { MemoryRecordSource } from 'live-system/core'
-import { useServerStore } from './stores.ts'
 import { advanceUntil, collect, createContext, finishedEvents } from './test-support.ts'
 import { VirtualServer } from './virtual-server.ts'
 
@@ -24,7 +23,7 @@ let servers: VirtualServer[] = []
 const create = (overrides: Partial<ServerRecord> = {}) => {
     const source = new RecordingSource([{ ...record, ...overrides }])
     const context = createContext()
-    const records = useServerStore(context.pinia)
+    const records = context.stores.servers
 
     records.set({ ...record, ...overrides })
 

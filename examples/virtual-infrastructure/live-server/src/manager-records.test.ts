@@ -9,7 +9,6 @@ import type { LiveSystem } from 'live-system/core'
 import type { DemoContext } from './context.ts'
 import { ManagerRecords } from './manager-records.ts'
 import { ServerManager } from './server-manager.ts'
-import { useManagerStore, useServerStore } from './stores.ts'
 import { bootSystem } from './test-support.ts'
 
 const manual: ManagerRecord = {
@@ -23,9 +22,9 @@ let systems: LiveSystem<DemoContext>[] = []
 
 const boot = async (records: ManagerRecord[], order: 'mirror first' | 'mirror last' = 'mirror first') => {
     const source = new MemoryRecordSource<ManagerRecord>(records)
-    const mirror = (context: DemoContext) => new ManagerRecords(context, source, useManagerStore(context.pinia))
+    const mirror = (context: DemoContext) => new ManagerRecords(context, source, context.stores.managers)
     const servers = (context: DemoContext) =>
-        new ServerManager(context, new MemoryRecordSource<ServerRecord>(), useServerStore(context.pinia), source)
+        new ServerManager(context, new MemoryRecordSource<ServerRecord>(), context.stores.servers, source)
     const booted =
         order === 'mirror first'
             ? await bootSystem<[ManagerRecords, ServerManager]>([mirror, servers])
@@ -36,7 +35,7 @@ const boot = async (records: ManagerRecord[], order: 'mirror first' | 'mirror la
     const serverManager = booted.managers.find(manager => manager instanceof ServerManager) as ServerManager
 
     /** The manager records as the store has them: what each manager watches for its own. */
-    const stored = () => Object.values(useManagerStore(booted.context.pinia).records)
+    const stored = () => Object.values(booted.context.stores.managers.records)
 
     return { ...booted, source, serverManager, stored }
 }

@@ -1,5 +1,5 @@
 // WebStartup: boots a web app's system and keeps a reactive status for the UI to render from.
-import { shallowReactive, shallowReadonly } from 'vue'
+import { shallowReactive, shallowReadonly } from '@vue/reactivity'
 import type { LiveSystem } from '../core/system.ts'
 
 /** What the startup needs of a system. */

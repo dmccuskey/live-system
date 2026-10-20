@@ -3,8 +3,8 @@ import type { CommandFinishedEvent, DemoEvents } from '@virtual-infrastructure/p
 import { EventBus, FakeClock, LiveSystem } from 'live-system/core'
 import type { BaseManager, Command, CommandResponse } from 'live-system/core'
 import { Router } from 'live-system/server'
-import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
+import { createStores } from './stores.ts'
 
 /** A context whose clock stands still until the test moves it. */
 export interface TestContext extends DemoContext {
@@ -15,7 +15,7 @@ export function createContext(overrides: Partial<Omit<DemoContext, 'clock'>> = {
     return {
         clock: new FakeClock(),
         events: new EventBus<DemoEvents>(),
-        pinia: createPinia(),
+        stores: createStores(),
         random: () => 0.5,
         ...overrides,
     }

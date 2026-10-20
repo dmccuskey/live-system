@@ -9,8 +9,7 @@
     "dependencies": {
         "@dmccuskey/feathers-connect": "github:dmccuskey/feathers-connect#v0.1.0",
         "@virtual-infrastructure/protocol": "workspace:*",
-        "live-system": "workspace:*",
-        "pinia": "^4.0.3",
-        "vue": "^3.5.43"
+        "@vue/reactivity": "^3.5.43",
+        "live-system": "workspace:*"
     }
 }
