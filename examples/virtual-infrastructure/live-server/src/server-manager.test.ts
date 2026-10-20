@@ -14,14 +14,11 @@ import {
     type CommandType,
 } from '@virtual-infrastructure/protocol/servers/servers.constants'
 import type { ServerRecord } from '@virtual-infrastructure/protocol/servers/servers.record'
-import { MemoryRecordSource } from 'live-system/core'
-import { defineRecordStore } from 'live-system/pinia'
+import { createRecordStore, MemoryRecordSource } from 'live-system/core'
 import type { CommandResponse, FakeClock, LiveSystem } from 'live-system/core'
-import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
 import type { ScalingDecider, ScalingDecision, ScalingSample } from './scaling-policy.ts'
 import { ServerManager } from './server-manager.ts'
-import { useManagerStore } from './stores.ts'
 import { advanceUntil, bootSystem, collect, finishedEvents } from './test-support.ts'
 
 const server = (id: string, overrides: Partial<ServerRecord> = {}): ServerRecord => ({
@@ -54,15 +51,9 @@ const boot = async (records: ServerRecord[] = [], policy?: ScalingDecider, manag
             // As the store has the record by the start
             const [record] = managerRecords
 
-            if (record) useManagerStore(context.pinia).set(record)
+            if (record) context.stores.managers.set(record)
 
-            return new ServerManager(
-                context,
-                source,
-                defineRecordStore<ServerRecord>('servers')(createPinia()),
-                managers,
-                policy,
-            )
+            return new ServerManager(context, source, createRecordStore<ServerRecord>(), managers, policy)
         },
     ])
 
@@ -540,7 +531,7 @@ describe("the queue's length", () => {
 
 // The manager's record as it arrives in the store from the data service
 const announce = (context: DemoContext, overrides: Partial<ManagerRecord> = {}) => {
-    useManagerStore(context.pinia).set({
+    context.stores.managers.set({
         id: 'manager-1',
         ...DEFAULT_MANAGER_RECORDS.servers,
         ...overrides,
@@ -735,7 +726,7 @@ describe('the scaling mode', () => {
         const { manager, context, clock } = await boot([server('s1')], stub.policy)
 
         announce(context, { scalingMode: 'manual', maxUtilization: 0.5 })
-        useManagerStore(context.pinia).remove('manager-1')
+        context.stores.managers.remove('manager-1')
         await stub.sampled(clock)
 
         expect(manager.scalingMode).toBe('automatic')
@@ -855,7 +846,7 @@ describe("the manager's own record", () => {
                 new ServerManager(
                     context,
                     new MemoryRecordSource<ServerRecord>([server('s1')]),
-                    defineRecordStore<ServerRecord>('servers')(createPinia()),
+                    createRecordStore<ServerRecord>(),
                     managers,
                 ),
         ])
@@ -878,8 +869,7 @@ describe("the manager's own record", () => {
         await system.shutdown()
 
         const again = await bootSystem<[ServerManager]>([
-            context =>
-                new ServerManager(context, source, defineRecordStore<ServerRecord>('servers')(createPinia()), managers),
+            context => new ServerManager(context, source, createRecordStore<ServerRecord>(), managers),
         ])
 
         systems.push(again.system)
@@ -905,7 +895,7 @@ describe('managers/servers/update', () => {
         await send(createUpdateManagerCommand('servers', { scalingMode: 'automatic' }))
         expect(manager.scalingMode).toBe('manual')
 
-        useManagerStore(context.pinia).set(await managers.get('manager-1'))
+        context.stores.managers.set(await managers.get('manager-1'))
         expect(manager.scalingMode).toBe('automatic')
     })
 

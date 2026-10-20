@@ -31,9 +31,8 @@
       "dependencies": {
         "@dmccuskey/feathers-connect": "github:dmccuskey/feathers-connect#v0.1.0",
         "@virtual-infrastructure/protocol": "workspace:*",
+        "@vue/reactivity": "^3.5.43",
         "live-system": "workspace:*",
-        "pinia": "^4.0.3",
-        "vue": "^3.5.43",
       },
     },
     "examples/virtual-infrastructure/protocol": {
@@ -67,12 +66,13 @@
       "version": "0.0.0",
       "dependencies": {
         "@dmccuskey/micro-fsm": "github:dmccuskey/micro-fsm#v0.1.0",
-        "vue": "^3.5.43",
       },
       "devDependencies": {
+        "@vue/reactivity": "^3.5.43",
         "pinia": "^4.0.3",
       },
       "peerDependencies": {
+        "@vue/reactivity": "^3.5.0",
         "pinia": "^4.0.3",
       },
       "optionalPeers": [
@@ -374,5 +374,7 @@
     "ws": ["ws@8.21.3", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw=="],
 
     "xmlhttprequest-ssl": ["xmlhttprequest-ssl@2.1.2", "", {}, "sha512-TEU+nJVUUnA4CYJFLvK5X9AOeH4KvDvhIfm0vV1GaQRtchnG0hgK5p8hw/xjv8cunWYCsiPCSDzObPyhEwq3KQ=="],
+
+    "@virtual-infrastructure/live-server/@dmccuskey/feathers-connect": ["@dmccuskey/feathers-connect@github:dmccuskey/feathers-connect#0fcab76", { "dependencies": { "@feathersjs/errors": "^5.0.50", "@feathersjs/feathers": "^5.0.50", "@feathersjs/socketio-client": "^5.0.50", "socket.io-client": "^4.8.4" } }, "dmccuskey-feathers-connect-0fcab76", "sha512-6BU++7LRSWxXIl1GpmUQMW7JUDfniKcKGRYkKL19nLLszw45q5c6GbP5vzz0djEqddHcJsMNsL5RR9gcVDP61w=="],
   }
 }

@@ -1,10 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { DataManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
-import { defineRecordStore } from 'live-system/pinia'
+import { createRecordStore, DataManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
 import { WebStartup } from 'live-system/web'
 import type { SystemPhase } from 'live-system/web'
-import { createPinia } from 'pinia'
-import { nextTick, watch } from 'vue'
+import { watch } from '@vue/reactivity'
 
 interface Item {
     id: string
@@ -28,7 +26,7 @@ class GatedSource extends MemoryRecordSource<Item> {
 // A web app's system: no router, one data manager, and a log of what happened
 function webApp(source = new GatedSource([{ id: 'a', name: 'first' }])) {
     const log: string[] = []
-    const store = defineRecordStore<Item>('items')(createPinia())
+    const store = createRecordStore<Item>()
     const options = {
         context: undefined,
         connect: async () => void log.push('connect'),
@@ -72,12 +70,10 @@ describe('WebStartup', () => {
         watch(
             () => startup.status.phase,
             phase => phases.push(phase),
-            { flush: 'sync' },
         )
 
         await startup.start()
         await startup.stop()
-        await nextTick()
 
         expect(phases).toEqual(['starting', 'running', 'stopped'])
     })

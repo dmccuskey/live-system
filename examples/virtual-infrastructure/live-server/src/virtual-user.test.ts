@@ -9,7 +9,6 @@ import {
 } from '@virtual-infrastructure/protocol/users/users.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
 import { MemoryRecordSource } from 'live-system/core'
-import { useUserStore } from './stores.ts'
 import { advanceUntil, collect, createContext } from './test-support.ts'
 import { VirtualUser } from './virtual-user.ts'
 
@@ -39,7 +38,7 @@ let users: VirtualUser[] = []
 const create = (overrides: Partial<UserRecord> = {}, random = () => 0.5) => {
     const context = createContext({ random })
     const source = new RecordingSource([{ ...record, ...overrides }])
-    const records = useUserStore(context.pinia)
+    const records = context.stores.users
     const sent = collect(context.events, 'commandRequested')
 
     records.set({ ...record, ...overrides })

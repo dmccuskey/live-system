@@ -1,8 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { LiveObject, LiveObjectManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
-import { defineRecordStore } from 'live-system/pinia'
+import { createRecordStore, LiveObject, LiveObjectManager, LiveSystem, MemoryRecordSource } from 'live-system/core'
 import type { LiveObjectOptions, RecordSource, RecordStore } from 'live-system/core'
-import { createPinia } from 'pinia'
 
 interface Item {
     id: string
@@ -93,7 +91,7 @@ class ThingManager<C = unknown> extends LiveObjectManager<Item, Thing, C> {
 
 function setup(records: Item[] = []) {
     const source = new MemoryRecordSource<Item>(records)
-    const store = defineRecordStore<Item>('items')(createPinia())
+    const store = createRecordStore<Item>()
     const manager = new ThingManager(undefined, source, store)
 
     return { source, store, manager }
@@ -119,7 +117,7 @@ class LimitedManager extends ThingManager {
 function setupLimited(concurrency: number | undefined, count: number) {
     const records = Array.from({ length: count }, (_, i) => ({ id: String.fromCharCode(97 + i), name: `item ${i}` }))
     const source = new MemoryRecordSource<Item>(records)
-    const store = defineRecordStore<Item>('items')(createPinia())
+    const store = createRecordStore<Item>()
     const manager =
         concurrency === undefined
             ? new ThingManager(undefined, source, store)
@@ -434,7 +432,7 @@ describe('an object that fails to start', () => {
             }
         }
         const source = new MemoryRecordSource<Item>([first])
-        const manager = new PlainManager(undefined, source, defineRecordStore<Item>('items')(createPinia()))
+        const manager = new PlainManager(undefined, source, createRecordStore<Item>())
         const error = spyOn(console, 'error').mockImplementation(() => {})
 
         await manager.init()
@@ -528,7 +526,7 @@ describe('stop()', () => {
 describe('in a LiveSystem', () => {
     test('boot() takes the objects through every phase, and shutdown() destroys them', async () => {
         const source = new MemoryRecordSource<Item>([first, second])
-        const store = defineRecordStore<Item>('items')(createPinia())
+        const store = createRecordStore<Item>()
         const system = new LiveSystem({ context: { store } })
         const manager = system.addManager(context => new ThingManager(context, source, context.store))
 
@@ -552,8 +550,8 @@ describe('in a LiveSystem', () => {
     })
 
     test('the objects of every manager are initialized before any is started', async () => {
-        const store = defineRecordStore<Item>('items')(createPinia())
-        const others = defineRecordStore<Item>('others')(createPinia())
+        const store = createRecordStore<Item>()
+        const others = createRecordStore<Item>()
         const system = new LiveSystem({ context: {} })
         const log: Log = []
         const one = system.addManager(context => new ThingManager(context, new MemoryRecordSource([first]), store))

@@ -56,7 +56,7 @@ Records represent persistent or transportable data. They are not necessarily the
 
 LiveSystem should not require a particular database, transport, or persistence technology.
 
-For example, Feathers can be used as a record source implementation, but it should not define the architecture. The one technology LiveSystem does fix is the local store: Vue's reactivity and Pinia, used as libraries with no UI (see [Reactive State](#reactive-state)).
+For example, Feathers can be used as a record source implementation, but it should not define the architecture. The one technology LiveSystem does fix is the local store's reactivity: Vue's, from `@vue/reactivity`, used as a library with no UI (see [Reactive State](#reactive-state)). The UI is the application's choice: Vue, or another that reads the store through `readable()` ([A UI That Isn't Vue](#a-ui-that-isnt-vue)).
 
 Decisions: [ADR 001](decisions/001-long-lived-managed-objects.md), [ADR 011](decisions/011-plain-typescript-vue-reactivity.md).
 
@@ -117,19 +117,19 @@ An application creates one instance of `LiveSystem`, adds its managers, and boot
 
 ```ts
 const system = new LiveSystem<DemoContext>({
-    context: { clock, events, pinia, random },
+    context: { clock, events, stores, random },
     router,
     connect: () => connection.connect(),
     disconnect: () => connection.disconnect(),
 })
 
-system.addManager(context => new UserManager(context, connection.recordSource(SERVICES.users), useUserStore(pinia)))
+system.addManager(context => new UserManager(context, connection.recordSource(SERVICES.users), stores.users))
 system.addManager(
     context =>
         new ServerManager(
             context,
             connection.recordSource(SERVICES.servers),
-            useServerStore(pinia),
+            stores.servers,
             connection.recordSource(SERVICES.managers),
         ),
 )
@@ -414,14 +414,14 @@ A manager receives as little as possible. The context holds only what every mana
 interface DemoContext {
     clock: Clock
     events: EventBus<DemoEvents>
-    pinia: Pinia
+    stores: DemoStores
     random: () => number
 }
 ```
 
 The demo's managers take that type (`LiveObjectManager<UserRecord, VirtualUser, DemoContext>`), and its system is a `LiveSystem<DemoContext>`.
 
-The event bus is passed in rather than reached for globally, so a test can give a manager its own. The Pinia instance holds the application's local reactive state, one store per kind of record. The [clock](#time) and the source of random numbers are the demo's own additions, there for the same reason as the bus: a test gives its own.
+The event bus is passed in rather than reached for globally, so a test can give a manager its own. The stores hold the application's local reactive state, one per kind of record. The [clock](#time) and the source of random numbers are the demo's own additions, there for the same reason as the bus: a test gives its own.
 
 ### Routes
 
@@ -874,7 +874,7 @@ Decisions: [ADR 006](decisions/006-record-source-boundary.md), [ADR 007](decisio
 
 Reactive state is how data changes are communicated inside an application. It is not the fundamental architecture of LiveSystem, which remains ordinary TypeScript: classes, inheritance, and lifecycle.
 
-Vue 3's reactivity is used as a library, separately from Vue's components:
+Vue 3's reactivity is used as a library, separately from Vue's components, from its own package, `@vue/reactivity`:
 
 ```ts
 reactive()
@@ -905,16 +905,14 @@ These functions need no UI. They are used on both sides of an application, for d
 
 On the server, reactivity communicates data changes: a manager or a live object watches reactive state and acts when it changes. There are no components and nothing is rendered.
 
-In a web application, Vue is used in the standard way: the same reactive state also drives components, which render the UI.
+In a web application, Vue is used in the standard way: the same reactive state also drives components, which render the UI. A UI that isn't Vue reads the same state through `readable()` ([A UI That Isn't Vue](#a-ui-that-isnt-vue)).
 
-The store is [Pinia](https://pinia.vuejs.org), on the server as on the web: Pinia needs no Vue app. Each kind of record has a store of its own, defined in one line with `defineRecordStore` from `live-system/pinia`:
+Each kind of record has a store of its own, a `RecordStore`, made with `createRecordStore` from `core`:
 
 ```ts
-import { defineRecordStore } from 'live-system/pinia'
+import { createRecordStore } from 'live-system/core'
 
-const useServerStore = defineRecordStore<ServerRecord>(SERVICES.servers)
-
-const servers = useServerStore(pinia)
+const servers = createRecordStore<ServerRecord>()
 
 servers.records // every record, by ID
 servers.get('42') // one record, or undefined
@@ -922,7 +920,17 @@ servers.get('42') // one record, or undefined
 
 Only the `DataManager` for those records writes to the store. Everything else reads, and what reads inside a `computed` or a `watch` reacts when the record is replaced. A record is replaced whole when it changes, never changed in place.
 
-A `DataManager` needs only the `RecordStore` interface from `core`: `records`, `load()`, `set()`, `remove()` and `get()`. Pinia sits on a subpath of its own and is an optional peer dependency, so an app may bring its own `RecordStore`, over a `shallowReactive` for example, and import `core` without Pinia.
+A Vue app may have the same store as a [Pinia](https://pinia.vuejs.org) store instead, for Pinia's devtools, defined in one line with `defineRecordStore` from `live-system/pinia`. Pinia is an optional peer dependency, imported only there. The demo's web app does so; its live server uses `createRecordStore`:
+
+```ts
+import { defineRecordStore } from 'live-system/pinia'
+
+const useServerStore = defineRecordStore<ServerRecord>(SERVICES.servers)
+
+const servers = useServerStore(pinia)
+```
+
+A `DataManager` needs only the `RecordStore` interface: `records`, `load()`, `set()`, `remove()` and `get()`, so an app may also bring its own.
 
 An object whose record changes faster than is worth writing can collect its updates with `debouncePatch`, which merges them and writes once after a quiet delay. It is opt-in: by default an update is written as it happens. Its delay runs on real time, or on the [clock](#time) it is given.
 
@@ -951,20 +959,20 @@ The store is how an application shares its data. It is there so that every part 
 
 - **Every store is a projection of the data service.** A manager writes to the data service through its record source. The change comes back as an event of the service, and the manager writes it into the store. A manager never changes the store on its own.
 - **A part that needs data another part owns watches the store.** It does not ask the manager that owns the data, and it needs no event for it. An event on the bus that repeats what the store already says is unnecessary.
-- **A watch on the store may be synchronous** (`flush: 'sync'`), so that a change is in force as soon as the store has it.
+- **A watch on the store is synchronous** when it comes from `@vue/reactivity`, as on the server, so that a change is in force as soon as the store has it. Vue's own `watch`, in a Vue app, waits for the next render unless it is given `flush: 'sync'`.
 
 ```ts
 // in the ServerManager: a setting takes effect when it comes back in the store
 override async start() {
     await super.start()
 
-    const managers = useManagerStore(this.context.pinia)
+    const managers = this.context.stores.managers
 
     this.#subscriptions.push(
         watch(
             () => Object.values(managers.records).find(record => record.key === MANAGER_KEYS.servers),
             record => this.#settingsChanged(record),
-            { immediate: true, flush: 'sync' },
+            { immediate: true },
         ),
     )
 }
@@ -973,6 +981,46 @@ override async start() {
 The watch begins in `start()`, when every store is loaded ([Each Phase Has Its Work](#each-phase-has-its-work)).
 
 What does not fit the store goes over the event bus, which is for "special" communication ([Event Sources](#event-sources)).
+
+### A UI That Isn't Vue
+
+A UI in Svelte, React or Angular reads the store through `readable()` from `live-system/web`. It makes any reactive read a `Readable`, with `get()` and `subscribe()`:
+
+```ts
+import { readable } from 'live-system/web'
+
+const user = readable(() => users.get(id)) // one record
+const servers = readable(() => Object.values(serverStore.records)) // a list
+const phase = readable(() => startup.status.phase) // a WebStartup's status
+```
+
+- **`subscribe()` calls its listener at once** with the value, then with each new one, and returns its `Unsubscribe`.
+- **Changes made together reach a listener once,** with the last value: loading 500 records one by one calls it once.
+- **A listener follows only what its getter reads:** a record changing does not wake the listeners of another.
+- **`get()` returns the same value until it changes.**
+
+Each framework reads it in a few lines, which stay in the application:
+
+```ts
+// Svelte: a Readable is a Svelte store
+$user
+
+// React: the readable made once per component, e.g. with useMemo
+function useReadable<T>(value: Readable<T>): T {
+    return useSyncExternalStore(value.subscribe, value.get)
+}
+
+// Angular: a signal, no RxJS
+function fromReadable<T>(value: Readable<T>): Signal<T> {
+    const current = signal(value.get())
+    inject(DestroyRef).onDestroy(value.subscribe(next => current.set(next)))
+    return current.asReadonly()
+}
+```
+
+An app that wants [nanostores](https://github.com/nanostores/nanostores)' ready-made adapters copies a `Readable` into an atom: `const $user = atom(user.get())` and `user.subscribe(value => $user.set(value))`. A Vue app needs none of this: it reads the store directly.
+
+In a UI, follow the store through `readable()`, or through Vue's own `watch` in a Vue app, rather than with `watch` from `@vue/reactivity`. That one runs at once on every change, so loading 500 records one at a time would call it 500 times: correct, but more work than a UI needs.
 
 Decisions: [ADR 011](decisions/011-plain-typescript-vue-reactivity.md), [ADR 007](decisions/007-data-service-source-of-truth.md).
 
@@ -1270,12 +1318,12 @@ live-system/
 
 `live-system` is one package with four entry points:
 
-| Entry point | Holds                                                                                                                                                                            |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core`      | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, the `RecordStore` interface, the optional event bus, the clock |
-| `pinia`     | `defineRecordStore`, the record store as a Pinia store. Pinia is an optional peer dependency, imported only here                                                                 |
-| `server`    | the router and the `CommandServer`, which turns an HTTP request into a command                                                                                                   |
-| `web`       | the `CommandClient` and `WebStartup`, which boots a web app's system and keeps its status                                                                                        |
+| Entry point | Holds                                                                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `core`      | what both sides share: the lifecycle, `BaseManager`, `DataManager<T>`, `LiveObjectManager<T, O>`, `RecordSource`, `RecordStore` and `createRecordStore`, the optional event bus, the clock |
+| `pinia`     | `defineRecordStore`, the record store as a Pinia store. Pinia is an optional peer dependency, imported only here                                                                           |
+| `server`    | the router and the `CommandServer`, which turns an HTTP request into a command                                                                                                             |
+| `web`       | the `CommandClient`, `WebStartup`, which boots a web app's system and keeps its status, and `readable()` for a UI that isn't Vue                                                           |
 
 `micro-fsm` and `feathers-connect` began in this workspace and now have repositories of their own: [`@dmccuskey/micro-fsm`](https://github.com/dmccuskey/micro-fsm) and [`@dmccuskey/feathers-connect`](https://github.com/dmccuskey/feathers-connect). The workspace installs them from GitHub, at a tagged version.
 

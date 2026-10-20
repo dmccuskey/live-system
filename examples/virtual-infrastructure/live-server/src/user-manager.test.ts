@@ -3,10 +3,8 @@ import { createAddUserCommand, createRemoveUserCommand } from '@virtual-infrastr
 import type { AddUserResult } from '@virtual-infrastructure/protocol/users/users.commands'
 import { FRUSTRATION_REFUSED, USER_NAMES } from '@virtual-infrastructure/protocol/users/users.constants'
 import type { UserRecord } from '@virtual-infrastructure/protocol/users/users.record'
-import { MemoryRecordSource } from 'live-system/core'
-import { defineRecordStore } from 'live-system/pinia'
+import { createRecordStore, MemoryRecordSource } from 'live-system/core'
 import type { LiveSystem } from 'live-system/core'
-import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
 import { advanceUntil, bootSystem, collect } from './test-support.ts'
 import { UserManager } from './user-manager.ts'
@@ -25,7 +23,7 @@ let systems: LiveSystem<DemoContext>[] = []
 const boot = async (records: UserRecord[] = []) => {
     const source = new MemoryRecordSource<UserRecord>(records)
     const booted = await bootSystem<[UserManager]>([
-        context => new UserManager(context, source, defineRecordStore<UserRecord>('users')(createPinia())),
+        context => new UserManager(context, source, createRecordStore<UserRecord>()),
     ])
 
     systems.push(booted.system)

@@ -5,11 +5,10 @@ import { FeathersConnection } from '@dmccuskey/feathers-connect'
 import { EventBus, LiveSystem, scaledClock, systemClock } from 'live-system/core'
 import type { Clock } from 'live-system/core'
 import { CommandServer, Router } from 'live-system/server'
-import { createPinia } from 'pinia'
 import type { DemoContext } from './context.ts'
 import { ManagerRecords } from './manager-records.ts'
 import { ServerManager } from './server-manager.ts'
-import { useManagerStore, useServerStore, useUserStore } from './stores.ts'
+import { createStores } from './stores.ts'
 import { UserManager } from './user-manager.ts'
 
 export interface LiveServerOptions {
@@ -55,13 +54,13 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
                 handshake: options.writeToken === undefined ? undefined : { writeToken: options.writeToken },
             })
             const router = new Router()
-            const pinia = createPinia()
+            const stores = createStores()
 
             const system = new LiveSystem<DemoContext>({
                 context: {
                     clock: options.timeScale === undefined ? clock : scaledClock(clock, options.timeScale),
                     events,
-                    pinia,
+                    stores,
                     random: options.random ?? Math.random,
                 },
                 router,
@@ -75,16 +74,15 @@ export function createLiveServer(options: LiveServerOptions): LiveServer {
                     new ServerManager(
                         context,
                         connection.recordSource(SERVICES.servers),
-                        useServerStore(pinia),
+                        stores.servers,
                         connection.recordSource(SERVICES.managers),
                     ),
             )
             system.addManager(
-                context =>
-                    new ManagerRecords(context, connection.recordSource(SERVICES.managers), useManagerStore(pinia)),
+                context => new ManagerRecords(context, connection.recordSource(SERVICES.managers), stores.managers),
             )
             system.addManager(
-                context => new UserManager(context, connection.recordSource(SERVICES.users), useUserStore(pinia)),
+                context => new UserManager(context, connection.recordSource(SERVICES.users), stores.users),
             )
 
             // In working order while the data service is connected: without it nothing is read or written

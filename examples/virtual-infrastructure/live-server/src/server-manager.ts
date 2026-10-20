@@ -34,11 +34,10 @@ import type {
     Routes,
     Unsubscribe,
 } from 'live-system/core'
-import { watch } from 'vue'
+import { watch } from '@vue/reactivity'
 import type { DemoContext } from './context.ts'
 import { RecentWindow } from './recent-window.ts'
 import { ScalingPolicy, type ScalingDecider } from './scaling-policy.ts'
-import { useManagerStore } from './stores.ts'
 import { VirtualServer } from './virtual-server.ts'
 
 // How long what the manager reports waits for another change before it is written, in milliseconds
@@ -183,14 +182,14 @@ export class ServerManager extends LiveObjectManager<ServerRecord, VirtualServer
             events.on('userRemoved', event => this.#drop(queued => queued.userId === event.userId)),
         )
 
-        const managers = useManagerStore(this.context.pinia)
+        const managers = this.context.stores.managers
 
-        // Sync, so the settings are in force as soon as the store has them
+        // Sync, as a watcher of Vue's reactivity alone is: the settings are in force as soon as the store has them
         this.#subscriptions.push(
             watch(
                 () => Object.values(managers.records).find(record => record.key === MANAGER_KEYS.servers),
                 record => this.#settingsChanged(record),
-                { immediate: true, flush: 'sync' },
+                { immediate: true },
             ),
         )
 

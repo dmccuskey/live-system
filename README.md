@@ -32,7 +32,7 @@ LiveSystem is intentionally small. It provides a few primitives that compose:
 - **Reactive state:** a view of the data for presentation, kept apart from the architecture.
 - **Cleanup:** every subscription returns an unsubscribe function, so shutdown releases what startup acquired.
 
-Technology stays at the edges: LiveSystem does not require a particular database or transport. Its local state is held in [Pinia](https://pinia.vuejs.org) stores, on the server as on the web, with no UI needed.
+Technology stays at the edges: LiveSystem does not require a particular database or transport. Its local state is held in stores on Vue's reactivity, on the server as on the web, with no UI needed. A Vue app may use them as [Pinia](https://pinia.vuejs.org) stores, and a UI in Svelte, React or Angular reads them through `readable()`.
 
 ## The Demo
 

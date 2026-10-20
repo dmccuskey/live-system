@@ -1,5 +1,5 @@
 // What the server and the web share: the lifecycle, LiveSystem, BaseManager,
-// LiveObject, the command types, RecordSource, the RecordStore interface, DataManager<T>,
+// LiveObject, the command types, RecordSource, the RecordStore and createRecordStore, DataManager<T>,
 // LiveObjectManager, the optional event bus and the clock.
 export { FakeClock, scaledClock, systemClock } from './clock.ts'
 export type { CancelTimer, Clock } from './clock.ts'
@@ -19,6 +19,7 @@ export { BaseManager } from './manager.ts'
 export type { RouteHandler, RouteParams, RouteRegistry, Routes } from './manager.ts'
 export { MemoryRecordSource } from './memory-record-source.ts'
 export type { HasId, NewRecord, RecordListener, RecordSource } from './record-source.ts'
+export { createRecordStore } from './record-store.ts'
 export type { RecordStore } from './record-store.ts'
 export { LiveSystem } from './system.ts'
 export type { LiveSystemOptions } from './system.ts'
