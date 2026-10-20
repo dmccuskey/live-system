@@ -3,7 +3,7 @@ import { CommandError } from '../core/command.ts'
 import type { Command, CommandErrorInfo, CommandResponse } from '../core/command.ts'
 
 export interface CommandClientOptions {
-    /** Where commands are posted: the URL of the server's `CommandServer`, such as `http://localhost:3030/command`. */
+    /** Where commands are posted: the URL of the server's `CommandServer`, such as `http://localhost:3031/command`. */
     url: string
     /** The `fetch` to send with. The global one unless given. */
     fetch?: Fetch
