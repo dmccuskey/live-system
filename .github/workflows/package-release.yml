@@ -1,0 +1,48 @@
+# Releases the `live-system` package, on a tag such as `live-system-v0.1.0`: runs the tests and the
+# type check, packs `packages/live-system`, and attaches `live-system-<version>.tgz` to a GitHub release,
+# from which other projects install it by URL.
+name: Package release
+
+on:
+    push:
+        tags:
+            - 'live-system-v*'
+
+permissions:
+    contents: write
+
+jobs:
+    release:
+        runs-on: ubuntu-24.04
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+
+            - name: Check the tag against the package's version
+              run: |
+                  VERSION=${GITHUB_REF_NAME#live-system-v}
+                  PACKAGE_VERSION=$(jq -r .version packages/live-system/package.json)
+                  if [ "$VERSION" != "$PACKAGE_VERSION" ]; then
+                      echo "The tag $GITHUB_REF_NAME does not match the package's version $PACKAGE_VERSION" >&2
+                      exit 1
+                  fi
+                  echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+            - run: bun install --frozen-lockfile
+
+            - run: bun test packages/live-system
+
+            - run: bun run typecheck
+
+            - name: Pack the package
+              run: bun pm pack --destination "$RUNNER_TEMP"
+              working-directory: packages/live-system
+
+            - name: Release it
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/live-system-$VERSION.tgz" \
+                      --title "live-system $VERSION" \
+                      --notes "Install: \`bun add live-system@https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/live-system-$VERSION.tgz\`. What changed: [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/packages/live-system/CHANGELOG.md)."

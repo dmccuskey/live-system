@@ -170,6 +170,20 @@ The workflow in `.github/workflows/demo-images.yml` pushes `ghcr.io/<owner>/virt
 
 A package is private when it is first pushed: make it public in its settings on GitHub before others can pull it.
 
+### Releasing the Package
+
+Other projects install `live-system` from a GitHub release (see [Using the Package](../packages/live-system/README.md)). To release a version:
+
+1. Raise `version` in `packages/live-system/package.json`, add the version to its `CHANGELOG.md`, run `bun install` so that `bun.lock` has the new version, and merge to `main`.
+2. Tag the merge with the same version, and push the tag:
+
+    ```sh
+    git tag live-system-v0.1.0
+    git push origin live-system-v0.1.0
+    ```
+
+The workflow in `.github/workflows/package-release.yml` checks the tag against the version, runs the package's tests and the type check, packs `packages/live-system` with `bun pm pack`, and attaches `live-system-<version>.tgz` to a release named for the tag. The tarball holds the source without the tests (`files` in `package.json`), with the package's README, changelog and license.
+
 ### No Build Step
 
 The packages export their TypeScript source: each `package.json` points its `exports` at files in `src/`, and nothing compiles them to JavaScript. Bun strips the types as it loads a file, so a change in one package is seen at once by the tests and by the demo, with no `dist/` folder to rebuild.
@@ -178,7 +192,7 @@ What follows from this:
 
 - **`bun test` does not check types.** Bun removes them without checking them, so code with type errors can pass its tests. Run `bun run typecheck` as well.
 - **The packages run under Bun or through a bundler, not under plain Node.js.** Node.js does not strip types from files under `node_modules`. A web app built with a bundler such as Vite is unaffected.
-- **A package needs a build before it is published.** The build emits JavaScript and `.d.ts` files, and `exports` then points at those. This applies first to `micro-fsm` and `feathers-connect`, before they go to npm. It changes the package's `package.json`, not its source.
+- **A package needs a build before it is published.** The build emits JavaScript and `.d.ts` files, and `exports` then points at those. This applies first to `micro-fsm` and `feathers-connect`, before they go to npm. The tarball of a release holds the source, since its users run Bun or a bundler. It changes the package's `package.json`, not its source.
 
 ## Testing
 

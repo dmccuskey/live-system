@@ -4,7 +4,10 @@
 export type CancelTimer = () => void
 
 export interface Clock {
-    /** Milliseconds from a start that means nothing: only the difference between two readings does. */
+    /**
+     * Milliseconds from a start that means nothing: only the difference between two readings does. Not a time of
+     * day: a timestamp that a record holds comes from `Date.now()`.
+     */
     now(): number
     /** Calls `fn` once, `delay` milliseconds from now. */
     after(delay: number, fn: () => void): CancelTimer

@@ -17,7 +17,7 @@ router.handle({
 
 ## Status
 
-The primitives are implemented: the lifecycle over its state machine, [Micro FSM](https://github.com/dmccuskey/micro-fsm) (a repository of its own), managers and live objects, commands (the `Router`, the `CommandServer` and the `CommandClient`), the event bus, and data: record sources, the record store and the Feathers connection, [Feathers Connect](https://github.com/dmccuskey/feathers-connect) (a repository of its own). What is in place is listed under [Current Baseline](docs/development.md#current-baseline). The demo runs on all of it ([Running the Demo](docs/development.md#running-the-demo)). Nothing is a published API yet. The design is in [docs/architecture.md](docs/architecture.md).
+The primitives are implemented: the lifecycle over its state machine, [Micro FSM](https://github.com/dmccuskey/micro-fsm) (a repository of its own), managers and live objects, commands (the `Router`, the `CommandServer` and the `CommandClient`), the event bus, and data: record sources, the record store and the Feathers connection, [Feathers Connect](https://github.com/dmccuskey/feathers-connect) (a repository of its own). What is in place is listed under [Current Baseline](docs/development.md#current-baseline). The demo runs on all of it ([Running the Demo](docs/development.md#running-the-demo)). The `live-system` package is released for other projects as a tarball on GitHub, not on npm, and its API may still change: see [Using the Package](packages/live-system/README.md). The design is in [docs/architecture.md](docs/architecture.md).
 
 ## Primitives
 
